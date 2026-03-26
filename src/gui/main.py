@@ -27,5 +27,3 @@ btn_generate = tk.Button(root, text="Generează Video", font=("Arial", 12, "bold
 btn_generate.pack(pady=30)
 
 root.bind('<Return>', on_generate)
-
-root.mainloop()
