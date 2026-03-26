@@ -1,11 +1,30 @@
 import tkinter as tk
+from tkinter import messagebox
+from gtts import gTTS
+import os
 
 def on_generate(event=None):
-    pass
+    topic = entry_topic.get()
+    subtopics = entry_subtopics.get()
+    minutes = entry_minutes.get()
+
+    if not topic:
+        messagebox.showwarning("Eroare", "Te rugăm să introduci un topic!")
+        return
+
+    text_final = f"Astăzi vom vorbi despre {topic}. Vom analiza următoarele subtopice: {subtopics}."
+    
+    try:
+        tts = gTTS(text=text_final, lang='ro')
+        output_path = "video_preview.mp3"
+        tts.save(output_path)
+        messagebox.showinfo("Succes", f"Audio generat cu succes: {output_path}")
+    except Exception as e:
+        messagebox.showerror("Eroare", f"A apărut o problemă: {e}")
 
 root = tk.Tk()
-root.title("Meowl")
-root.geometry("450x350")
+root.title("YouTube Video Automator")
+root.geometry("450x400")
 root.resizable(False, False)
 
 font_label = ("Arial", 11, "bold")
