@@ -52,7 +52,8 @@ def process_content(text, scene_interval, image_source):
     except Exception as e:
         print(f"PIPELINE ERROR: {e}")
         root.after(0, lambda: status_label.config(text=f"Error"))
-        root.after(0, lambda: messagebox.showerror("Error", str(e)))
+        err_msg = str(e)
+        root.after(0, lambda: messagebox.showerror("Error", err_msg))
 
 def get_scene_interval():
     try:

@@ -126,7 +126,7 @@ def generate_with_gemini_image(prompts, output_dir="assets/curated_pool"):
         print(f"  [{i+1}/{len(prompts)}] \"{prompt[:70]}...\"")
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash-preview-image',
+                model='gemini-2.5-flash-image',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=['IMAGE'],
@@ -280,11 +280,6 @@ def download_scene_images(script_text, audio_duration, scene_interval=8,
         pexels_prompts = fallback_prompts(missing)
         pexels_short = [" ".join(p.split()[:4]) for p in pexels_prompts]
         extra = download_from_pexels(pexels_short)
-        for j, path in enumerate(extra):
-            new_idx = len(result) + j + 1
-            new_path = os.path.join("assets/curated_pool", f"scene_{new_idx:03d}.jpg")
-            if path != new_path:
-                os.rename(path, new_path)
-            result.append(new_path)
+        result.extend(extra)
 
     return result
