@@ -1,21 +1,10 @@
 """
 kokoro_narration.py — Genereaza narration audio cu Kokoro TTS (local, gratis)
-Inlocuieste gTTS. Exporta generate_voice() pentru gui/main.py.
+Exporta generate_voice() care returneaza si timing-uri pt subtitrari.
 """
 import os
 import re
 import numpy as np
-
-def clean_script_text(text):
-    """Curata formatting Gemini: bold, italic, headere, bullets."""
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # **bold**
-    text = re.sub(r'\*(.+?)\*', r'\1', text)       # *italic*
-    text = re.sub(r'#{1,6}\s*', '', text)           # ### headere
-    text = re.sub(r'^\s*[-*•]\s+', '', text, flags=re.MULTILINE)  # bullets
-    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # [link](url)
-    text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
 
 VOICE_PRESETS = {
     "calm":       {"voice": "af_heart", "speed": 0.85, "lang": "a", "pause": 0.5},
@@ -27,6 +16,19 @@ VOICE_PRESETS = {
 
 MIN_WORDS = 15
 MAX_WORDS = 70
+
+
+def clean_script_text(text):
+    """Curata formatting Gemini: bold, italic, headere, bullets."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'#{1,6}\s*', '', text)
+    text = re.sub(r'^\s*[-*•]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 
 def smart_split(text):
     text = text.strip()
@@ -76,11 +78,16 @@ def generate_voice(text, output_path="video_final.wav", preset="narration",
                    voice=None, speed=None, lang=None, pause_seconds=None):
     """
     Genereaza audio WAV din text cu Kokoro TTS.
-    Returneaza output_path daca reuseste, None daca nu.
+    
+    Returns:
+        (output_path, chunk_timings) — chunk_timings e lista de {"text", "start", "end"}
+        sau (None, []) daca esueaza.
     """
     import soundfile as sf
     from kokoro import KPipeline
+
     text = clean_script_text(text)
+
     p = VOICE_PRESETS.get(preset, VOICE_PRESETS["narration"])
     v = voice or p["voice"]
     s = speed or p["speed"]
@@ -94,24 +101,41 @@ def generate_voice(text, output_path="video_final.wav", preset="narration",
     print(f"[Kokoro] {len(chunks)} chunks")
 
     all_audio = []
+    chunk_timings = []
     silence = np.zeros(int(24000 * pause))
+    current_time = 0.0
 
     for idx, chunk in enumerate(chunks):
         print(f"  [{idx+1}/{len(chunks)}] \"{chunk[:60]}...\"")
         chunk_audio = []
         for i, (gs, ps, audio) in enumerate(pipeline(chunk, voice=v, speed=s)):
             chunk_audio.append(audio)
+        
         if chunk_audio:
-            all_audio.append(np.concatenate(chunk_audio))
+            combined = np.concatenate(chunk_audio)
+            chunk_duration = len(combined) / 24000
+
+            # Salveaza timing pentru SRT
+            chunk_timings.append({
+                "text": chunk,
+                "start": current_time,
+                "end": current_time + chunk_duration
+            })
+
+            all_audio.append(combined)
+            current_time += chunk_duration
+
+            # Adauga pauza
             if idx < len(chunks) - 1:
                 all_audio.append(silence)
+                current_time += pause
 
     if not all_audio:
         print("[Kokoro] EROARE: Nu s-a generat audio!")
-        return None
+        return None, []
 
     full_audio = np.concatenate(all_audio)
     sf.write(output_path, full_audio, 24000)
     duration = len(full_audio) / 24000
     print(f"[Kokoro] GATA! {output_path} ({duration:.1f}s)")
-    return output_path
+    return output_path, chunk_timings

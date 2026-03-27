@@ -4,10 +4,12 @@ import os
 import threading
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice
+from voice_gen.subtitles import generate_srt_from_chunks
 from video_edit.editor import create_video
 
 def cleanup_old_assets():
-    files_to_delete = ["video_final.wav", "video_final.mp3", "generated_script.txt", "final_video.mp4"]
+    files_to_delete = ["video_final.wav", "video_final.mp3", "generated_script.txt",
+                       "final_video.mp4", "subtitles.srt", "temp_no_subs.mp4"]
     for file in files_to_delete:
         if os.path.exists(file):
             os.remove(file)
@@ -20,15 +22,21 @@ def process_content(text):
     try:
         cleanup_old_assets()
 
+        # STEP 1: Voice (returns timings too)
         root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio with Kokoro TTS...\nThis may take a minute."))
-        output_path = generate_voice(text, output_path="video_final.wav", preset="narration")
-
-        if not output_path:
+        audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset="narration")
+        if not audio_path:
             root.after(0, lambda: messagebox.showerror("Error", "Audio generation failed!"))
             return
 
+        # STEP 2: Subtitles (from Kokoro timings, instant)
+        srt_path = None
+        if chunk_timings:
+            srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
+
+        # STEP 3: Video
         root.after(0, lambda: messagebox.showinfo("Status", "Rendering cinematic video... This will take a while."))
-        create_video()
+        create_video(srt_path=srt_path)
 
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
     except Exception as e:
