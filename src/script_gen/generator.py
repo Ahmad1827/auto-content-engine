@@ -10,7 +10,7 @@ def get_script(topic, subtopics, minutes, method="Gemini"):
         return "Error: GEMINI_API_KEY not found in .env file"
         
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     Write a detailed YouTube script in English about {topic}. 

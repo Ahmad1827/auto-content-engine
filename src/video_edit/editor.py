@@ -23,7 +23,9 @@ def apply_ken_burns_no_bars(clip, duration, VIDEO_SIZE):
     return final_view
 
 def create_video():
-    audio_path = "video_final.mp3"
+    audio_path = "video_final.wav"
+    if not os.path.exists(audio_path):
+        audio_path = "video_final.mp3"
     pool_dir = "assets/curated_pool"
     music_path = "assets/music/background.mp3"
     output_path = "final_video.mp4"

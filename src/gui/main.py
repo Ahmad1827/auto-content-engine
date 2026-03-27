@@ -1,13 +1,13 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
-from gtts import gTTS
 import os
-import shutil
+import threading
 from script_gen.generator import get_script
+from voice_gen.kokoro_narration import generate_voice
 from video_edit.editor import create_video
 
 def cleanup_old_assets():
-    files_to_delete = ["video_final.mp3", "generated_script.txt", "final_video.mp4"]
+    files_to_delete = ["video_final.wav", "video_final.mp3", "generated_script.txt", "final_video.mp4"]
     for file in files_to_delete:
         if os.path.exists(file):
             os.remove(file)
@@ -19,19 +19,21 @@ def process_content(text):
         return
     try:
         cleanup_old_assets()
-        
-        root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio..."))
-        tts = gTTS(text=text, lang='en') 
-        output_path = "video_final.mp3"
-        tts.save(output_path)
-        
+
+        root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio with Kokoro TTS...\nThis may take a minute."))
+        output_path = generate_voice(text, output_path="video_final.wav", preset="narration")
+
+        if not output_path:
+            root.after(0, lambda: messagebox.showerror("Error", "Audio generation failed!"))
+            return
+
         root.after(0, lambda: messagebox.showinfo("Status", "Rendering cinematic video... This will take a while."))
         create_video()
-        
+
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
     except Exception as e:
-        error_details = str(e)
-        root.after(0, lambda: messagebox.showerror("Error", f"Processing failed: {error_details}"))
+        err = str(e)
+        root.after(0, lambda: messagebox.showerror("Error", f"Processing failed: {err}"))
 
 def update_ui_style(event=None):
     method = combo_method.get()
@@ -47,33 +49,39 @@ def on_generate(event=None):
         manual_window = tk.Toplevel(root)
         manual_window.title("Manual Input")
         manual_window.geometry("600x500")
-        
+
         tk.Label(manual_window, text="Paste your English script here:", font=("Arial", 11, "bold")).pack(pady=10)
-        
+
         txt_area = tk.Text(manual_window, wrap=tk.WORD, width=70, height=20, font=("Arial", 10))
         txt_area.pack(padx=10, pady=10)
-        
+
         def start_manual_processing():
             script_content = txt_area.get("1.0", tk.END).strip()
-            process_content(script_content)
             manual_window.destroy()
+            threading.Thread(target=process_content, args=(script_content,), daemon=True).start()
 
-        tk.Button(manual_window, text="START GENERATING AUDIO", bg="#10b981", fg="white", 
+        tk.Button(manual_window, text="START GENERATING AUDIO", bg="#10b981", fg="white",
                   font=("Arial", 11, "bold"), command=start_manual_processing).pack(pady=10)
     else:
         topic = entry_topic.get()
         if not topic:
             messagebox.showwarning("Warning", "Please enter a topic for AI Generation!")
             return
-            
+
         messagebox.showinfo("Processing", f"AI is thinking... Please wait.")
-        try:
-            script = get_script(topic, entry_subtopics.get(), entry_minutes.get(), method)
-            with open("generated_script.txt", "w", encoding="utf-8") as f:
-                f.write(script)
-            process_content(script)
-        except Exception as e:
-            messagebox.showerror("Error", f"AI Generation failed: {e}")
+        def ai_pipeline():
+            try:
+                script = get_script(topic, entry_subtopics.get(), entry_minutes.get(), method)
+                if script.startswith(("Error:", "AI Error:")):
+                    root.after(0, lambda: messagebox.showerror("Error", script))
+                    return
+                with open("generated_script.txt", "w", encoding="utf-8") as f:
+                    f.write(script)
+                process_content(script)
+            except Exception as e:
+                err = str(e)
+                root.after(0, lambda: messagebox.showerror("Error", f"AI Generation failed: {err}"))
+        threading.Thread(target=ai_pipeline, daemon=True).start()
 
 root = tk.Tk()
 root.title("YouTube Automator")
@@ -104,7 +112,7 @@ tk.Label(root, text="Est. Duration (minutes):", font=font_label).pack(pady=(15, 
 entry_minutes = tk.Entry(root, width=15, font=font_entry)
 entry_minutes.pack()
 
-btn_generate = tk.Button(root, text="Paste Script & Generate Audio", font=("Arial", 12, "bold"), 
+btn_generate = tk.Button(root, text="Paste Script & Generate Audio", font=("Arial", 12, "bold"),
                          bg="#10b981", fg="white", command=on_generate, height=2, width=30)
 btn_generate.pack(pady=40)
 

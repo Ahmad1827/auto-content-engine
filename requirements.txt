@@ -1,5 +1,6 @@
 google-generativeai
 moviepy
-gTTS
 python-dotenv
 Pillow
+kokoro>=0.9.4
+soundfile
