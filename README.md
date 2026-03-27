@@ -4,7 +4,7 @@ Automated YouTube video generator with AI narration.
 
 ## Pipeline
 ```
-Gemini (script) → Kokoro TTS (voice) → MoviePy (video)
+Gemini (script) or Manual → Kokoro TTS (voice) → MoviePy (video)
 ```
 
 ---
