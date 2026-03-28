@@ -16,3 +16,12 @@ assets/curated_pool/*
 !assets/curated_pool/.gitkeep
 assets/music/*
 !assets/music/.gitkeep
+image_fetcher.py
+talking_cat.py
+cat_video.mp4
+src/gui/main_local.py
+run_local.py
+proxy_api.py
+medal_fetcher.py
+main_local.py
+cat_video.mp4
