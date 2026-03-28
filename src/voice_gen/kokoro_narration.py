@@ -1,25 +1,42 @@
-"""
-kokoro_narration.py — Genereaza narration audio cu Kokoro TTS (local, gratis)
-Exporta generate_voice() care returneaza si timing-uri pt subtitrari.
-"""
 import os
 import re
 import numpy as np
 
 VOICE_PRESETS = {
-    "calm":       {"voice": "af_heart", "speed": 0.85, "lang": "a", "pause": 0.5},
-    "narration":  {"voice": "af_heart", "speed": 0.90, "lang": "a", "pause": 0.4},
-    "storytell":  {"voice": "af_bella", "speed": 0.95, "lang": "a", "pause": 0.35},
-    "educational":{"voice": "af_bella", "speed": 1.00, "lang": "a", "pause": 0.3},
-    "british":    {"voice": "bf_emma",  "speed": 0.90, "lang": "b", "pause": 0.4},
+    "🇺🇸 AF - Heart (Warm/Default)": {"voice": "af_heart", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Bella (Energetic)": {"voice": "af_bella", "speed": 0.95, "lang": "a", "pause": 0.35},
+    "🇺🇸 AF - Nicole (Professional)": {"voice": "af_nicole", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Sarah (Calm/Reliable)": {"voice": "af_sarah", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Sky (Soft/Soothing)": {"voice": "af_sky", "speed": 0.85, "lang": "a", "pause": 0.5},
+    "🇺🇸 AF - Alloy (Authoritative)": {"voice": "af_alloy", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Aoede (Expressive)": {"voice": "af_aoede", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Jessica (Friendly)": {"voice": "af_jessica", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Kore (Balanced)": {"voice": "af_kore", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AF - Nova (Upbeat)": {"voice": "af_nova", "speed": 0.95, "lang": "a", "pause": 0.35},
+    "🇺🇸 AF - River (Smooth)": {"voice": "af_river", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Michael (Deep/News)": {"voice": "am_michael", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Adam (Classic)": {"voice": "am_adam", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Echo (Resonant)": {"voice": "am_echo", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Eric (Professional)": {"voice": "am_eric", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Fenrir (Powerful)": {"voice": "am_fenrir", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Liam (Friendly)": {"voice": "am_liam", "speed": 0.95, "lang": "a", "pause": 0.4},
+    "🇺🇸 AM - Onyx (Rich/Elegant)": {"voice": "am_onyx", "speed": 0.90, "lang": "a", "pause": 0.45},
+    "🇺🇸 AM - Puck (Playful)": {"voice": "am_puck", "speed": 0.95, "lang": "a", "pause": 0.35},
+    "🇺🇸 AM - Santa (Jolly)": {"voice": "am_santa", "speed": 0.90, "lang": "a", "pause": 0.4},
+    "🇬🇧 BF - Emma (Elegant)": {"voice": "bf_emma", "speed": 0.90, "lang": "b", "pause": 0.4},
+    "🇬🇧 BF - Isabella (Articulate)": {"voice": "bf_isabella", "speed": 0.95, "lang": "b", "pause": 0.4},
+    "🇬🇧 BF - Alice (Storytelling)": {"voice": "bf_alice", "speed": 0.90, "lang": "b", "pause": 0.4},
+    "🇬🇧 BF - Lily (Gentle)": {"voice": "bf_lily", "speed": 0.85, "lang": "b", "pause": 0.45},
+    "🇬🇧 BM - George (Commanding)": {"voice": "bm_george", "speed": 0.90, "lang": "b", "pause": 0.4},
+    "🇬🇧 BM - Fable (Expressive)": {"voice": "bm_fable", "speed": 0.90, "lang": "b", "pause": 0.4},
+    "🇬🇧 BM - Lewis (Clear)": {"voice": "bm_lewis", "speed": 0.95, "lang": "b", "pause": 0.4},
+    "🇬🇧 BM - Daniel (Modern)": {"voice": "bm_daniel", "speed": 0.95, "lang": "b", "pause": 0.4},
 }
 
 MIN_WORDS = 15
 MAX_WORDS = 70
 
-
 def clean_script_text(text):
-    """Curata formatting Gemini: bold, italic, headere, bullets."""
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
     text = re.sub(r'#{1,6}\s*', '', text)
@@ -28,7 +45,6 @@ def clean_script_text(text):
     text = re.sub(r'`([^`]+)`', r'\1', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
-
 
 def smart_split(text):
     text = text.strip()
@@ -73,22 +89,14 @@ def smart_split(text):
             chunks.append(buffer)
     return chunks
 
-
-def generate_voice(text, output_path="video_final.wav", preset="narration",
+def generate_voice(text, output_path="video_final.wav", preset="🇺🇸 AF - Heart (Warm/Default)",
                    voice=None, speed=None, lang=None, pause_seconds=None):
-    """
-    Genereaza audio WAV din text cu Kokoro TTS.
-    
-    Returns:
-        (output_path, chunk_timings) — chunk_timings e lista de {"text", "start", "end"}
-        sau (None, []) daca esueaza.
-    """
     import soundfile as sf
     from kokoro import KPipeline
 
     text = clean_script_text(text)
 
-    p = VOICE_PRESETS.get(preset, VOICE_PRESETS["narration"])
+    p = VOICE_PRESETS.get(preset, VOICE_PRESETS["🇺🇸 AF - Heart (Warm/Default)"])
     v = voice or p["voice"]
     s = speed or p["speed"]
     l = lang or p["lang"]
@@ -115,7 +123,6 @@ def generate_voice(text, output_path="video_final.wav", preset="narration",
             combined = np.concatenate(chunk_audio)
             chunk_duration = len(combined) / 24000
 
-            # Salveaza timing pentru SRT
             chunk_timings.append({
                 "text": chunk,
                 "start": current_time,
@@ -125,7 +132,6 @@ def generate_voice(text, output_path="video_final.wav", preset="narration",
             all_audio.append(combined)
             current_time += chunk_duration
 
-            # Adauga pauza
             if idx < len(chunks) - 1:
                 all_audio.append(silence)
                 current_time += pause
