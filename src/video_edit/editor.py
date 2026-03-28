@@ -1,27 +1,70 @@
 import os
-import random
 import subprocess
-from moviepy import AudioFileClip, ImageClip, concatenate_videoclips, CompositeAudioClip, CompositeVideoClip
+import numpy as np
+from PIL import Image
+from moviepy import AudioFileClip, ImageClip, concatenate_videoclips, CompositeAudioClip, VideoClip
 
-def apply_ken_burns_no_bars(clip, duration, VIDEO_SIZE):
-    zoom_ratio = 0.08
-    overscan = 0.1
-
-    base_clip = clip.resized(height=VIDEO_SIZE[1] * (1 + overscan))
-    centered_base = base_clip.with_duration(duration).with_position('center')
-
-    if random.random() > 0.5:
-        panning_clip = centered_base.resized(
-            lambda t: 1 + (zoom_ratio * t / duration)
-        )
+def apply_cyclical_ken_burns(clip, duration, VIDEO_SIZE, img_index):
+    w, h = VIDEO_SIZE
+    
+    img = Image.fromarray(clip.get_frame(0))
+    img_w, img_h = img.size
+    
+    target_ratio = w / h
+    img_ratio = img_w / img_h
+    
+    if img_ratio > target_ratio:
+        base_h = img_h
+        base_w = base_h * target_ratio
     else:
-        panning_clip = centered_base.resized(
-            lambda t: (1 + zoom_ratio) - (zoom_ratio * t / duration)
+        base_w = img_w
+        base_h = base_w / target_ratio
+        
+    cx, cy = img_w / 2, img_h / 2
+    effect_type = img_index % 4
+    
+    resample_method = getattr(Image, 'Resampling', Image).BICUBIC
+    
+    def make_frame(t):
+        progress = min(1.0, t / duration)
+        
+        if effect_type == 0:
+            scale = 1.0 - (0.08 * progress)
+            cur_cx, cur_cy = cx, cy
+        elif effect_type == 1:
+            scale = 0.92 + (0.08 * progress)
+            cur_cx, cur_cy = cx, cy
+        elif effect_type == 2:
+            scale = 0.92
+            shift_max = base_w * 0.04
+            cur_cx = (cx - shift_max) + (shift_max * 2 * progress)
+            cur_cy = cy
+        else:
+            scale = 0.92
+            shift_max = base_w * 0.04
+            cur_cx = (cx + shift_max) - (shift_max * 2 * progress)
+            cur_cy = cy
+            
+        vw = base_w * scale
+        vh = base_h * scale
+        
+        box = (
+            cur_cx - vw / 2,
+            cur_cy - vh / 2,
+            cur_cx + vw / 2,
+            cur_cy + vh / 2
         )
-
-    final_view = panning_clip.cropped(width=VIDEO_SIZE[0], height=VIDEO_SIZE[1], x_center=panning_clip.w/2, y_center=panning_clip.h/2)
-
-    return final_view
+        
+        frame_img = img.transform(
+            (w, h),
+            Image.EXTENT,
+            data=box,
+            resample=resample_method
+        )
+        return np.array(frame_img)
+        
+    print(f"[Video Edit] Applying Effect {effect_type} for scene {img_index + 1}")
+    return VideoClip(make_frame, duration=duration)
 
 def create_video(srt_path=None):
     audio_path = "video_final.wav"
@@ -73,7 +116,7 @@ def create_video(srt_path=None):
             if current_scene_duration <= 0:
                 break
 
-        cinematic_clip = apply_ken_burns_no_bars(img_clip, current_scene_duration, VIDEO_SIZE)
+        cinematic_clip = apply_cyclical_ken_burns(img_clip, current_scene_duration, VIDEO_SIZE, i)
         clips.append(cinematic_clip)
 
     print("Assembling final video...")
@@ -82,8 +125,8 @@ def create_video(srt_path=None):
 
     if srt_path and os.path.exists(srt_path):
         temp_path = "temp_no_subs.mp4"
-        print("Rendering video (without subtitles)...")
-        video.write_videofile(temp_path, fps=24, codec="libx264", audio_codec="aac", threads=4)
+        print("Rendering high-quality video (without subtitles)...")
+        video.write_videofile(temp_path, fps=24, codec="libx264", audio_codec="aac", bitrate="8000k", threads=4)
 
         print("Burning subtitles with ffmpeg...")
         success = burn_subtitles(temp_path, srt_path, output_path)
@@ -94,8 +137,8 @@ def create_video(srt_path=None):
             else:
                 os.rename(temp_path, output_path)
     else:
-        print("Rendering final video (no subtitles)...")
-        video.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac", threads=4)
+        print("Rendering high-quality final video (no subtitles)...")
+        video.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac", bitrate="8000k", threads=4)
 
     print(f"Video generation successful! Output: {output_path}")
     return output_path
@@ -106,14 +149,14 @@ def burn_subtitles(video_path, srt_path, output_path):
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", f"subtitles='{srt_abs}':force_style='FontSize=22,FontName=Arial,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1'",
+        "-vf", f"subtitles='{srt_abs}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&H00FFFFFF,BorderStyle=3,Outline=1,Shadow=0,MarginV=30'",
         "-c:a", "copy",
+        "-b:v", "8000k",
         output_path
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
-            print(f"[Subtitles] Burned into {output_path}")
             return True
         else:
             print(f"[Subtitles] ffmpeg error: {result.stderr[:200]}")
