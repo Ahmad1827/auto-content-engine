@@ -8,11 +8,28 @@ kokoro_env/
 .env
 .DS_Store
 Thumbs.db
-assets/output/
+
+# Generated files
 *.mp4
 *.mp3
 *.wav
+subtitles.srt
+generated_script.txt
+
+# Asset pools (keep folders, ignore contents)
 assets/curated_pool/*
 !assets/curated_pool/.gitkeep
 assets/music/*
 !assets/music/.gitkeep
+assets/gaming_clips/*
+!assets/gaming_clips/.gitkeep
+
+# Local-only files (not on git)
+run_local.py
+src/gui/main_local.py
+src/image_gen/image_fetcher.py
+src/image_gen/talking_cat.py
+src/videoclips_gen/medal_fetcher.py
+src/utils/proxy_api.py
+proxies.txt
+src/videoclips_gen/find_medal_ids.py
