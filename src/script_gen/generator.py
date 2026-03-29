@@ -11,16 +11,14 @@ def get_script(topic, subtopics, minutes, method="Gemini"):
         
     client = genai.Client(api_key=api_key)
     
-    prompt = f"""
-    Write a detailed YouTube documentary script in English about {topic}. 
-    Focus on these strategic subtopics: {subtopics}. 
-    Target duration: {minutes} minutes.
-    
-    The tone should be serious, authoritative, and cinematic.
-    Format the output strictly as spoken text paragraphs.
-    Do not include scene markers, image prompts, or visual directions.
-    Write only the exact words the narrator will speak.
-    """
+    prompt = f"""Write a detailed YouTube documentary script in English about {topic}. 
+Focus on these strategic subtopics: {subtopics}. 
+Target duration: {minutes} minutes.
+
+The tone should be serious, authoritative, and cinematic.
+Format the output strictly as spoken text paragraphs.
+Do not include scene markers, image prompts, or visual directions.
+Write only the exact words the narrator will speak."""
 
     try:
         response = client.models.generate_content(

@@ -99,7 +99,7 @@ def create_video(srt_path=None):
     if not os.path.exists(pool_dir):
         os.makedirs(pool_dir)
 
-    source_images = [os.path.join(pool_dir, img) for img in sorted(os.listdir(pool_dir)) if img.lower().endswith(('jpg', 'png', 'jpeg'))]
+    source_images = [os.path.join(pool_dir, img) for img in sorted(os.listdir(pool_dir)) if img.lower().endswith(('jpg', 'png', 'jpeg', 'webp'))]
 
     if not source_images:
         print("Warning: No images found. Creating a temporary black placeholder.")

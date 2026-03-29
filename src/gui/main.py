@@ -29,39 +29,30 @@ def cleanup_old_assets():
         if os.path.exists(file):
             os.remove(file)
 
-def process_content(text):
+def process_content(text, custom_keywords=""):
     if not text.strip():
         root.after(0, lambda: messagebox.showwarning("Warning", "The script is empty!"))
         return
     try:
         cleanup_old_assets()
-        
         do_web = var_web_img.get()
         do_ai = var_ai_img.get()
-        
         if do_web or do_ai:
             root.after(0, lambda: messagebox.showinfo("Status", "Analyzing script to fetch & generate images...\nThis will take a moment."))
-            prepare_assets(text, use_web=do_web, use_ai=do_ai)
-
+            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords)
         root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio with Kokoro TTS...\nThis may take a minute."))
-        
         selected_voice = combo_voice.get()
         if selected_voice not in VOICE_PRESETS:
              selected_voice = "🇺🇸 AM - Michael (Deep/News)"
-             
         audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset=selected_voice)
-        
         if not audio_path:
             root.after(0, lambda: messagebox.showerror("Error", "Audio generation failed!"))
             return
-
         srt_path = None
         if chunk_timings:
             srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
-
         root.after(0, lambda: messagebox.showinfo("Status", "Rendering cinematic video... This will take a while."))
         create_video(srt_path=srt_path)
-
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
     except Exception as e:
         err = str(e)
@@ -83,7 +74,6 @@ def get_duration_minutes():
 def on_find_trending():
     topic_input = entry_topic.get().strip()
     duration = get_duration_minutes()
-
     def fetch():
         if topic_input:
             root.after(0, lambda: status_label.config(text=f"Finding trends for '{topic_input}'..."))
@@ -91,18 +81,14 @@ def on_find_trending():
         else:
             root.after(0, lambda: status_label.config(text="Finding trending topics..."))
             results = get_trending(duration_min=duration)
-
         rss = results.get("rss", [])
         pytr = results.get("pytrends", [])
-
         if not rss and not pytr:
             root.after(0, lambda: status_label.config(text="No trends found"))
             root.after(0, lambda: messagebox.showwarning("Trends", "No topics found."))
             return
-
         root.after(0, lambda: show_trend_picker(rss, pytr, topic_input))
         root.after(0, lambda: status_label.config(text="Ready"))
-
     threading.Thread(target=fetch, daemon=True).start()
 
 def show_trend_picker(rss_topics, pytrends_topics, original_topic):
@@ -111,24 +97,20 @@ def show_trend_picker(rss_topics, pytrends_topics, original_topic):
     win.geometry("440x480")
     win.resizable(False, False)
     win.configure(bg=BG_MAIN)
-
     if original_topic:
         tk.Label(win, text=f"Trends for \"{original_topic}\"", font=("Segoe UI", 13, "bold"), bg=BG_MAIN, fg=FG_TEXT).pack(pady=(15, 10))
     else:
         tk.Label(win, text="Trending Now", font=("Segoe UI", 13, "bold"), bg=BG_MAIN, fg=FG_TEXT).pack(pady=(15, 10))
-
     if rss_topics:
         tk.Label(win, text="🔥 Google Trends", font=("Segoe UI", 10, "bold"), bg=BG_MAIN, fg=ACCENT_TREND).pack(anchor="w", padx=20, pady=(5, 3))
         for t in rss_topics:
             btn = tk.Button(win, text=t, font=("Segoe UI", 11), anchor="w", padx=15, pady=5, bg=BG_CARD, fg=FG_TEXT, activebackground=ENTRY_BG, activeforeground=FG_TEXT, cursor="hand2", width=40, relief="flat", borderwidth=1, command=lambda topic=t: autofill_topic(topic, original_topic, win))
             btn.pack(pady=2, padx=20)
-
     if pytrends_topics:
         tk.Label(win, text="📊 Related Searches", font=("Segoe UI", 10, "bold"), bg=BG_MAIN, fg=ACCENT_PRIMARY).pack(anchor="w", padx=20, pady=(12, 3))
         for t in pytrends_topics:
             btn = tk.Button(win, text=t, font=("Segoe UI", 11), anchor="w", padx=15, pady=5, bg=BG_CARD, fg=FG_TEXT, activebackground=ENTRY_BG, activeforeground=FG_TEXT, cursor="hand2", width=40, relief="flat", borderwidth=1, command=lambda topic=t: autofill_topic(topic, original_topic, win))
             btn.pack(pady=2, padx=20)
-
     tk.Label(win, text="Click to auto-fill", font=("Segoe UI", 8), bg=BG_MAIN, fg=FG_DIM).pack(pady=(10, 5))
 
 def autofill_topic(selected_topic, original_topic, popup):
@@ -144,7 +126,7 @@ def autofill_topic(selected_topic, original_topic, popup):
 
 def on_generate(event=None):
     method = combo_method.get()
-
+    custom_kw = entry_custom_images.get().strip()
     if method == "Manual":
         manual_window = tk.Toplevel(root)
         manual_window.title("Manual Input")
@@ -156,7 +138,7 @@ def on_generate(event=None):
         def start():
             content = txt_area.get("1.0", tk.END).strip()
             manual_window.destroy()
-            threading.Thread(target=process_content, args=(content,), daemon=True).start()
+            threading.Thread(target=process_content, args=(content, custom_kw), daemon=True).start()
         tk.Button(manual_window, text="START GENERATING AUDIO", bg=ACCENT_SECONDARY, fg="white", activebackground=ACCENT_SECONDARY_ACTIVE, activeforeground="white", font=("Segoe UI", 11, "bold"), relief="flat", borderwidth=0, cursor="hand2", padx=20, pady=10, command=start).pack(pady=15)
     else:
         topic = entry_topic.get()
@@ -173,7 +155,7 @@ def on_generate(event=None):
                     return
                 with open("generated_script.txt", "w", encoding="utf-8") as f:
                     f.write(script)
-                process_content(script)
+                process_content(script, custom_kw)
             except Exception as e:
                 err = str(e)
                 root.after(0, lambda: messagebox.showerror("Error", f"Failed: {err}"))
@@ -182,7 +164,7 @@ def on_generate(event=None):
 
 root = tk.Tk()
 root.title("Auto Content Engine")
-root.geometry("480x840")
+root.geometry("480x920")
 root.resizable(False, False)
 root.configure(bg=BG_MAIN)
 
@@ -229,6 +211,10 @@ btn_trends.pack(side=tk.RIGHT)
 tk.Label(card2, text="Subtopics:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
 entry_subtopics = tk.Entry(card2, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
 entry_subtopics.pack(fill=tk.X, pady=(0, 5))
+
+tk.Label(card2, text="Custom Image Keywords (comma-separated):", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
+entry_custom_images = tk.Entry(card2, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
+entry_custom_images.pack(fill=tk.X, pady=(0, 5))
 
 var_web_img = tk.BooleanVar(value=True)
 var_ai_img = tk.BooleanVar(value=True)
