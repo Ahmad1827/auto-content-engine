@@ -7,8 +7,8 @@ from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
 from voice_gen.subtitles import generate_srt_from_chunks
 from video_edit.editor import create_video
 from trend_finder.trends import get_trending, get_related
+from video_edit.downloader import prepare_assets
 
-# --- NEW CLEAN LIGHT THEME ---
 BG_MAIN = "#F9FAFB"
 BG_CARD = "#FFFFFF"
 FG_TEXT = "#111827"
@@ -35,6 +35,14 @@ def process_content(text):
         return
     try:
         cleanup_old_assets()
+        
+        do_web = var_web_img.get()
+        do_ai = var_ai_img.get()
+        
+        if do_web or do_ai:
+            root.after(0, lambda: messagebox.showinfo("Status", "Analyzing script to fetch & generate images...\nThis will take a moment."))
+            prepare_assets(text, use_web=do_web, use_ai=do_ai)
+
         root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio with Kokoro TTS...\nThis may take a minute."))
         
         selected_voice = combo_voice.get()
@@ -174,7 +182,7 @@ def on_generate(event=None):
 
 root = tk.Tk()
 root.title("Auto Content Engine")
-root.geometry("480x760")
+root.geometry("480x840")
 root.resizable(False, False)
 root.configure(bg=BG_MAIN)
 
@@ -222,13 +230,18 @@ tk.Label(card2, text="Subtopics:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack
 entry_subtopics = tk.Entry(card2, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
 entry_subtopics.pack(fill=tk.X, pady=(0, 5))
 
+var_web_img = tk.BooleanVar(value=True)
+var_ai_img = tk.BooleanVar(value=True)
+check_frame = tk.Frame(card2, bg=BG_CARD)
+check_frame.pack(fill=tk.X, pady=(10, 0))
+tk.Checkbutton(check_frame, text="Web Scraping Images", variable=var_web_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.LEFT)
+tk.Checkbutton(check_frame, text="AI Generated Images", variable=var_ai_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.RIGHT)
+
 card3 = tk.Frame(root, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 card3.pack(fill=tk.X, padx=20, pady=10)
 tk.Label(card3, text="AUDIO SETTINGS", font=("Segoe UI", 9, "bold"), bg=BG_CARD, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
 
 tk.Label(card3, text="Voice Preset:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w")
-
-# Strict readonly dropdown, no typing allowed
 combo_voice = ttk.Combobox(card3, values=list(VOICE_PRESETS.keys()), state="readonly", font=font_entry)
 combo_voice.set("🇺🇸 AM - Michael (Deep/News)")
 combo_voice.pack(fill=tk.X, pady=(2, 5))
@@ -239,7 +252,7 @@ btn_generate.pack(fill=tk.X, padx=20, pady=(15, 5))
 status_label = tk.Label(root, text="Ready", font=("Segoe UI", 10), bg=BG_MAIN, fg=FG_DIM)
 status_label.pack(pady=5)
 
-tk.Label(root, text="Trends → Gemini → Kokoro TTS → Video", font=("Segoe UI", 8), bg=BG_MAIN, fg=FG_DIM).pack(side=tk.BOTTOM, pady=10)
+tk.Label(root, text="Trends → Gemini → Web Scrape/AI → Kokoro TTS → Video", font=("Segoe UI", 8), bg=BG_MAIN, fg=FG_DIM).pack(side=tk.BOTTOM, pady=10)
 
 root.bind('<Return>', on_generate)
 update_ui_style()

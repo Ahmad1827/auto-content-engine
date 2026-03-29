@@ -75,14 +75,11 @@ def create_video(srt_path=None):
     music_path = "assets/music/background.mp3"
     output_path = "final_video.mp4"
 
-    SCENE_DURATION = 25
+    SCENE_DURATION = 20
     VIDEO_SIZE = (1920, 1080)
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError("Audio file missing.")
-
-    if not os.path.exists(pool_dir) or not os.listdir(pool_dir):
-        raise FileNotFoundError(f"Missing images in {pool_dir}")
 
     print("Preparing audio...")
     voice_clip = AudioFileClip(audio_path)
@@ -99,7 +96,17 @@ def create_video(srt_path=None):
         except Exception:
             pass
 
-    source_images = [os.path.join(pool_dir, img) for img in sorted(os.listdir(pool_dir)) if img.endswith(('jpg', 'png', 'jpeg'))]
+    if not os.path.exists(pool_dir):
+        os.makedirs(pool_dir)
+
+    source_images = [os.path.join(pool_dir, img) for img in sorted(os.listdir(pool_dir)) if img.lower().endswith(('jpg', 'png', 'jpeg'))]
+
+    if not source_images:
+        print("Warning: No images found. Creating a temporary black placeholder.")
+        placeholder_path = os.path.join(pool_dir, "fallback_black.jpg")
+        img = Image.new('RGB', VIDEO_SIZE, color='black')
+        img.save(placeholder_path)
+        source_images = [placeholder_path]
 
     num_scenes_needed = int(total_duration / SCENE_DURATION) + 1
     print(f"Creating {num_scenes_needed} scenes using {len(source_images)} source images.")
@@ -142,7 +149,6 @@ def create_video(srt_path=None):
 
     print(f"Video generation successful! Output: {output_path}")
     return output_path
-
 
 def burn_subtitles(video_path, srt_path, output_path):
     srt_abs = os.path.abspath(srt_path).replace("\\", "/").replace(":", "\\:")

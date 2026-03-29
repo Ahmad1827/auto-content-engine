@@ -1,62 +1,81 @@
 import os
 import requests
-import re
+import urllib.parse
+from duckduckgo_search import DDGS
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def extract_keywords_from_script(script_text):
-    keywords = []
-    for line in script_text.split('\n'):
-        if "IMAGE_PROMPT:" in line:
-            keyword = line.replace("IMAGE_PROMPT:", "").strip()
-
-            keyword = re.sub(r'[\(\)]', '', keyword)
-            if keyword:
-                keywords.append(keyword)
-    
-    if not keywords:
-        keywords = ["history", "mystery", "documentary", "ancient"]
-        
-    return keywords
-
-def download_images_from_pexels(script_text):
-    api_key = os.getenv("PEXELS_API_KEY")
+def analyze_script_for_images(script_text):
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("PEXELS_API_KEY is missing from .env file!")
+        return ["military map"], ["dark cinematic war room 16:9"]
         
-    output_dir = "assets/images"
+    client = genai.Client(api_key=api_key)
+    prompt = f"""Read this script.
+    Generate 8 web search queries for real-world photos. Prefix each with WEB:
+    Generate 4 detailed AI image prompts for cinematic scenes. Prefix each with AI:
+    Script: {script_text[:1500]}"""
+    
+    web_queries = []
+    ai_prompts = []
+    
+    try:
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        for line in response.text.split('\n'):
+            line = line.strip()
+            if line.startswith("WEB:"):
+                web_queries.append(line.replace("WEB:", "").strip())
+            elif line.startswith("AI:"):
+                ai_prompts.append(line.replace("AI:", "").strip())
+    except Exception:
+        pass
+        
+    if not web_queries:
+        web_queries = ["military conflict", "fighter jet", "geopolitics map", "government building"]
+    if not ai_prompts:
+        ai_prompts = ["cinematic war room, dark lighting, glowing map, 8k resolution, highly detailed"]
+        
+    return web_queries, ai_prompts
+
+def prepare_assets(script_text, output_dir="../assets/curated_pool", use_web=True, use_ai=True):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
-    keywords = extract_keywords_from_script(script_text)
-    headers = {"Authorization": api_key}
-    downloaded_files = []
-
-    print(f"\n--- Starting Pexels Download for {len(keywords)} scenes ---")
-
-    for i, query in enumerate(keywords):
-        short_query = " ".join(query.split()[:4])
-        print(f"Searching Pexels for: '{short_query}'")
         
-        url = f"https://api.pexels.com/v1/search?query={short_query}&per_page=1&orientation=landscape"
-        
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('photos'):
-                img_url = data['photos'][0]['src']['large2x']
-                img_data = requests.get(img_url).content
-                
-                file_path = os.path.join(output_dir, f"scene_{i+1}.jpg")
-                with open(file_path, "wb") as f:
-                    f.write(img_data)
-                downloaded_files.append(file_path)
-                print(f" -> Saved: {file_path}")
-            else:
-                print(f" -> No images found for: '{short_query}'")
-        else:
-            print(f" -> Pexels API Error: {response.status_code}")
+    for file in os.listdir(output_dir):
+        file_path = os.path.join(output_dir, file)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
             
-    print("--- Download Complete ---\n")
-    return downloaded_files
+    web_queries, ai_prompts = analyze_script_for_images(script_text)
+    count = 0
+    
+    if use_web:
+        ddgs = DDGS()
+        for query in web_queries:
+            try:
+                results = ddgs.images(keywords=query, max_results=1)
+                for res in results:
+                    img_url = res.get("image")
+                    if img_url:
+                        img_data = requests.get(img_url, timeout=5).content
+                        with open(os.path.join(output_dir, f"scene_{count}.jpg"), "wb") as f:
+                            f.write(img_data)
+                        count += 1
+            except Exception:
+                continue
+                
+    if use_ai:
+        for prompt in ai_prompts:
+            try:
+                encoded_prompt = urllib.parse.quote(prompt)
+                url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1920&height=1080&nologo=true"
+                img_data = requests.get(url, timeout=15).content
+                with open(os.path.join(output_dir, f"scene_{count}.jpg"), "wb") as f:
+                    f.write(img_data)
+                count += 1
+            except Exception:
+                continue
+                
+    return count

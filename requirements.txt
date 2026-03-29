@@ -1,6 +1,9 @@
-google-generativeai
+google-genai
+duckduckgo-search
+requests
 moviepy
 python-dotenv
 Pillow
 kokoro>=0.9.4
 soundfile
+numpy
