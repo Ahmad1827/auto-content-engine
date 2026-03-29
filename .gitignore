@@ -33,3 +33,4 @@ src/videoclips_gen/medal_fetcher.py
 src/utils/proxy_api.py
 proxies.txt
 src/videoclips_gen/find_medal_ids.py
+subtitles.srt
