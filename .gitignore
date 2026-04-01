@@ -6,13 +6,17 @@ venv/
 env/
 kokoro_env/
 .env
+.env.*
 .DS_Store
 Thumbs.db
-
+.pytest_cache/
 # Generated files
 *.mp4
-*.mp3
 *.wav
+*.mp3
+*.srt
+*.avi
+*.mkv
 subtitles.srt
 generated_script.txt
 
@@ -23,6 +27,7 @@ assets/music/*
 !assets/music/.gitkeep
 assets/gaming_clips/*
 !assets/gaming_clips/.gitkeep
+assets/background.mp4
 
 # Local-only files (not on git)
 run_local.py
@@ -34,3 +39,7 @@ src/utils/proxy_api.py
 proxies.txt
 src/videoclips_gen/find_medal_ids.py
 subtitles.srt
+generated_script.txt
+
+.vscode/
+.idea/
