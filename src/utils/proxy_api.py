@@ -1,22 +1,20 @@
 """
 proxy_api.py — Extrage proxy-uri gratuite din MULTIPLE surse.
-Ruleaza MEREU la inceput (symphony.bat) ca sa ai proxy-uri fresh.
-Surse fara selenium (rapide):
-  1. ProxyScrape API 
+Surse fara selenium (rapide, ruleaza mereu):
+  1. ProxyScrape API
   2. Geonode API
-Surse cu selenium (fallback daca API-urile nu dau destule):
+Surse cu selenium (fallback, doar daca selenium e instalat):
   3. free-proxy-list.net
   4. Spys.one
+
+Locatie: src/utils/proxy_api.py
 """
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import requests
 import sys
 import time
+import os
 
-PROXY_FILE = "proxies.txt"
+PROXY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "proxies.txt")
 MIN_PROXIES_NEEDED = 30
 
 def fetch_from_proxyscrape():
@@ -54,83 +52,89 @@ def fetch_from_geonode():
         print(f"[Geonode] Error: {e}")
     return []
 
-def fetch_from_freeproxylist(driver):
-    print("[FreeProxyList] Loading page...")
+def fetch_with_selenium():
+    """Selenium fallback — only if selenium is installed."""
     try:
-        driver.get("https://free-proxy-list.net/")
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "table-responsive"))
-        )
-        table_div = driver.find_element(By.CLASS_NAME, "table-responsive")
-        tbody = table_div.find_element(By.TAG_NAME, "table").find_element(By.TAG_NAME, "tbody")
-        rows = tbody.find_elements(By.TAG_NAME, "tr")
-        proxies = []
-        for row in rows:
-            cells = row.find_elements(By.TAG_NAME, "td")
-            if len(cells) >= 2:
-                ip = cells[0].text.strip(); port = cells[1].text.strip()
-                if ip and port: proxies.append(f"{ip}:{port}")
-        print(f"[FreeProxyList] Got {len(proxies)} proxies")
-        return proxies
-    except Exception as e:
-        print(f"[FreeProxyList] Error: {e}")
-        try:
-            driver.save_screenshot("error_screenshot.png")
-            with open("page_source.html","w",encoding="utf-8") as f:
-                f.write(driver.page_source)
-        except: pass
+        from selenium import webdriver
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+    except ImportError:
+        print("[Selenium] Not installed, skipping (pip install selenium if needed)")
         return []
 
-def fetch_from_spysone(driver):
-    print("[Spys.one] Loading page...")
+    proxies = []
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless"); options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage"); options.add_argument("--disable-gpu")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
     try:
-        driver.get("https://spys.one/en/free-proxy-list/")
-        time.sleep(3)
-        rows = driver.find_elements(By.CSS_SELECTOR, "tr.spy1x, tr.spy1xx")
-        proxies = []
-        for row in rows:
-            cells = row.find_elements(By.TAG_NAME, "td")
-            if cells:
-                text = cells[0].text.strip()
-                if ':' in text and text[0].isdigit():
-                    proxy = text.split('\n')[0].strip()
-                    if proxy.count(':') == 1: proxies.append(proxy)
-        print(f"[Spys.one] Got {len(proxies)} proxies")
-        return proxies
+        driver = webdriver.Chrome(options=options)
     except Exception as e:
-        print(f"[Spys.one] Error: {e}")
+        print(f"[Selenium] Chrome driver not available: {e}")
         return []
+
+    try:
+        # free-proxy-list.net
+        print("[FreeProxyList] Loading page...")
+        try:
+            driver.get("https://free-proxy-list.net/")
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "table-responsive"))
+            )
+            table_div = driver.find_element(By.CLASS_NAME, "table-responsive")
+            tbody = table_div.find_element(By.TAG_NAME, "table").find_element(By.TAG_NAME, "tbody")
+            for row in tbody.find_elements(By.TAG_NAME, "tr"):
+                cells = row.find_elements(By.TAG_NAME, "td")
+                if len(cells) >= 2:
+                    ip = cells[0].text.strip(); port = cells[1].text.strip()
+                    if ip and port: proxies.append(f"{ip}:{port}")
+            print(f"[FreeProxyList] Got {len(proxies)} proxies")
+        except Exception as e:
+            print(f"[FreeProxyList] Error: {e}")
+
+        # Spys.one
+        if len(proxies) < MIN_PROXIES_NEEDED:
+            print("[Spys.one] Loading page...")
+            try:
+                driver.get("https://spys.one/en/free-proxy-list/")
+                time.sleep(3)
+                for row in driver.find_elements(By.CSS_SELECTOR, "tr.spy1x, tr.spy1xx"):
+                    cells = row.find_elements(By.TAG_NAME, "td")
+                    if cells:
+                        text = cells[0].text.strip()
+                        if ':' in text and text[0].isdigit():
+                            proxy = text.split('\n')[0].strip()
+                            if proxy.count(':') == 1: proxies.append(proxy)
+                print(f"[Spys.one] Got {len(proxies)} proxies total")
+            except Exception as e:
+                print(f"[Spys.one] Error: {e}")
+    finally:
+        driver.quit()
+
+    return proxies
 
 def fetch_proxies():
     all_proxies = []
     all_proxies.extend(fetch_from_proxyscrape())
     all_proxies.extend(fetch_from_geonode())
-    
+
     if len(all_proxies) < MIN_PROXIES_NEEDED:
-        print(f"\n[Main] Doar {len(all_proxies)} din API-uri. Pornesc Selenium...")
-        options = webdriver.ChromeOptions()
-        options.add_argument("--headless"); options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage"); options.add_argument("--disable-gpu")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        driver = webdriver.Chrome(options=options)
-        try:
-            all_proxies.extend(fetch_from_freeproxylist(driver))
-            if len(all_proxies) < MIN_PROXIES_NEEDED:
-                all_proxies.extend(fetch_from_spysone(driver))
-        finally:
-            driver.quit()
-    
+        print(f"\n[Main] Only {len(all_proxies)} from APIs. Trying Selenium...")
+        all_proxies.extend(fetch_with_selenium())
+
     all_proxies = list(dict.fromkeys(all_proxies))
-    print(f"\n[Main] Total unic: {len(all_proxies)} proxy-uri")
-    
+    print(f"\n[Main] Total unique: {len(all_proxies)} proxies")
+
     if not all_proxies:
-        print("[Main] EROARE: Nu am gasit niciun proxy!")
+        print("[Main] WARNING: No proxies found!")
         return
-    
+
     with open(PROXY_FILE, "w") as f:
         for proxy in all_proxies:
             f.write(proxy + "\n")
-    print(f"[Main] Salvat {len(all_proxies)} proxy-uri in {PROXY_FILE}")
+    print(f"[Main] Saved {len(all_proxies)} proxies to {PROXY_FILE}")
 
 if __name__ == "__main__":
     fetch_proxies()

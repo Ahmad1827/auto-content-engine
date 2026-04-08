@@ -1,3 +1,6 @@
+"""
+run.py — Lanseaza versiunea git (publica) a GUI-ului.
+"""
 import sys
 import os
 
