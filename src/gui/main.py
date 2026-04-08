@@ -2,12 +2,16 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import os
 import threading
+
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
 from voice_gen.subtitles import generate_srt_from_chunks
-from video_edit.editor import create_video
+from video_edit.editor import create_video as create_doc_video
 from trend_finder.trends import get_trending, get_related
 from video_edit.downloader import prepare_assets
+
+from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
+from shorts_gen.editor import create_video as create_gameplay_video
 
 BG_MAIN = "#F9FAFB"
 BG_CARD = "#FFFFFF"
@@ -24,7 +28,8 @@ ENTRY_FG = "#111827"
 
 def cleanup_old_assets():
     files_to_delete = ["video_final.wav", "video_final.mp3", "generated_script.txt",
-                       "final_video.mp4", "subtitles.srt", "temp_no_subs.mp4"]
+                       "final_video.mp4", "subtitles.srt", "temp_no_subs.mp4",
+                       "short_audio.wav", "short_subs.srt", "final_tiktok.mp4", "final_youtube.mp4"]
     for file in files_to_delete:
         if os.path.exists(file):
             os.remove(file)
@@ -40,23 +45,102 @@ def process_content(text, custom_keywords=""):
         if do_web or do_ai:
             root.after(0, lambda: messagebox.showinfo("Status", "Analyzing script to fetch & generate images...\nThis will take a moment."))
             prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords)
+        
         root.after(0, lambda: messagebox.showinfo("Status", "Generating Audio with Kokoro TTS...\nThis may take a minute."))
         selected_voice = combo_voice.get()
         if selected_voice not in VOICE_PRESETS:
              selected_voice = "🇺🇸 AM - Michael (Deep/News)"
+        
         audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset=selected_voice)
         if not audio_path:
             root.after(0, lambda: messagebox.showerror("Error", "Audio generation failed!"))
             return
+            
         srt_path = None
         if chunk_timings:
             srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
+            
         root.after(0, lambda: messagebox.showinfo("Status", "Rendering cinematic video... This will take a while."))
-        create_video(srt_path=srt_path)
+        create_doc_video(srt_path=srt_path)
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
+        root.after(0, lambda: status_label.config(text="Ready"))
     except Exception as e:
         err = str(e)
         root.after(0, lambda: messagebox.showerror("Error", f"Processing failed: {err}"))
+        root.after(0, lambda: status_label.config(text="Failed"))
+    finally:
+        root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+
+def process_reddit_content(story, voice, is_short):
+    try:
+        cleanup_old_assets()
+        script = format_story_for_tts(story)
+        
+        root.after(0, lambda: status_label.config(text="Generating Voice & Subtitles..."))
+        audio_path, chunk_timings = generate_voice(script, output_path="short_audio.wav", preset=voice)
+        srt_path = generate_srt_from_chunks(chunk_timings, output_srt="short_subs.srt")
+        
+        root.after(0, lambda: status_label.config(text="Rendering Gameplay Video..."))
+        bg_video = "assets/background.mp4"
+        out_name = "final_tiktok.mp4" if is_short else "final_youtube.mp4"
+        
+        success, msg = create_gameplay_video(audio_path, srt_path, bg_video_path=bg_video, output_path=out_name, is_short=is_short)
+        
+        if success:
+            root.after(0, lambda: messagebox.showinfo("Success", f"Video successfully rendered as {out_name}!"))
+            root.after(0, lambda: status_label.config(text="Ready"))
+        else:
+            root.after(0, lambda: messagebox.showerror("Render Error", msg))
+            root.after(0, lambda: status_label.config(text="Failed"))
+            
+    except Exception as e:
+        err = str(e)
+        root.after(0, lambda: messagebox.showerror("Error", f"Reddit pipeline failed: {err}"))
+        root.after(0, lambda: status_label.config(text="Failed"))
+    finally:
+        root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+
+def open_reddit_picker(subreddit, voice, is_short):
+    root.after(0, lambda: status_label.config(text=f"Fetching top stories from r/{subreddit}..."))
+    stories = get_reddit_stories(subreddit=subreddit, limit=10)
+    
+    if not stories:
+        root.after(0, lambda: messagebox.showerror("Error", f"Could not find stories for r/{subreddit}."))
+        root.after(0, lambda: status_label.config(text="Ready"))
+        root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        return
+
+    def on_select():
+        selection = listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Select a story first!")
+            return
+        selected_story = stories[selection[0]]
+        picker_win.destroy()
+        
+        root.after(0, lambda: status_label.config(text="Processing Reddit Story..."))
+        threading.Thread(target=process_reddit_content, args=(selected_story, voice, is_short), daemon=True).start()
+
+    def on_close():
+        picker_win.destroy()
+        root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        root.after(0, lambda: status_label.config(text="Ready"))
+
+    picker_win = tk.Toplevel(root)
+    picker_win.title(f"Top Stories from r/{subreddit}")
+    picker_win.geometry("500x350")
+    picker_win.configure(bg=BG_MAIN)
+    picker_win.protocol("WM_DELETE_WINDOW", on_close)
+    
+    tk.Label(picker_win, text="Select a story to generate:", font=("Segoe UI", 11, "bold"), bg=BG_MAIN, fg=FG_TEXT).pack(pady=10)
+    
+    listbox = tk.Listbox(picker_win, width=70, height=12, font=("Segoe UI", 10))
+    listbox.pack(padx=15, pady=5)
+    
+    for s in stories:
+        listbox.insert(tk.END, s['title'])
+        
+    tk.Button(picker_win, text="Generate Video", bg=ACCENT_SECONDARY, fg="white", activebackground=ACCENT_SECONDARY_ACTIVE, activeforeground="white", font=("Segoe UI", 10, "bold"), cursor="hand2", command=on_select).pack(pady=10)
 
 def update_ui_style(event=None):
     method = combo_method.get()
@@ -125,8 +209,19 @@ def autofill_topic(selected_topic, original_topic, popup):
     status_label.config(text=f"Topic: {selected_topic}")
 
 def on_generate(event=None):
+    proj_type = var_project_type.get()
+    btn_generate.config(state=tk.DISABLED)
+    
+    if proj_type == "Reddit Story":
+        sub = entry_topic.get().strip() or "AmItheAsshole"
+        voice = combo_voice.get()
+        is_short = var_format.get() == "Short"
+        threading.Thread(target=open_reddit_picker, args=(sub, voice, is_short), daemon=True).start()
+        return
+
     method = combo_method.get()
     custom_kw = entry_custom_images.get().strip()
+    
     if method == "Manual":
         manual_window = tk.Toplevel(root)
         manual_window.title("Manual Input")
@@ -140,10 +235,12 @@ def on_generate(event=None):
             manual_window.destroy()
             threading.Thread(target=process_content, args=(content, custom_kw), daemon=True).start()
         tk.Button(manual_window, text="START GENERATING AUDIO", bg=ACCENT_SECONDARY, fg="white", activebackground=ACCENT_SECONDARY_ACTIVE, activeforeground="white", font=("Segoe UI", 11, "bold"), relief="flat", borderwidth=0, cursor="hand2", padx=20, pady=10, command=start).pack(pady=15)
+        btn_generate.config(state=tk.NORMAL)
     else:
         topic = entry_topic.get()
         if not topic:
             messagebox.showwarning("Warning", "Please enter a topic!")
+            btn_generate.config(state=tk.NORMAL)
             return
         status_label.config(text="AI generating script...")
         def pipeline():
@@ -152,6 +249,7 @@ def on_generate(event=None):
                 if script.startswith(("Error:", "AI Error:")):
                     root.after(0, lambda: messagebox.showerror("Error", script))
                     root.after(0, lambda: status_label.config(text="Failed"))
+                    root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
                     return
                 with open("generated_script.txt", "w", encoding="utf-8") as f:
                     f.write(script)
@@ -160,11 +258,12 @@ def on_generate(event=None):
                 err = str(e)
                 root.after(0, lambda: messagebox.showerror("Error", f"Failed: {err}"))
                 root.after(0, lambda: status_label.config(text="Failed"))
+                root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
         threading.Thread(target=pipeline, daemon=True).start()
 
 root = tk.Tk()
 root.title("Auto Content Engine")
-root.geometry("480x920")
+root.geometry("480x1000")
 root.resizable(False, False)
 root.configure(bg=BG_MAIN)
 
@@ -180,6 +279,12 @@ header_frame = tk.Frame(root, bg=BG_MAIN)
 header_frame.pack(fill=tk.X, pady=(20, 10))
 tk.Label(header_frame, text="AUTO CONTENT ENGINE", font=("Segoe UI", 16, "bold"), bg=BG_MAIN, fg=FG_TEXT).pack()
 tk.Label(header_frame, text="AI Video Automation Pipeline", font=("Segoe UI", 9), bg=BG_MAIN, fg=FG_DIM).pack()
+
+type_frame = tk.Frame(root, bg=BG_MAIN)
+type_frame.pack(fill=tk.X, pady=(0, 10))
+var_project_type = tk.StringVar(value="Documentary")
+tk.Radiobutton(type_frame, text="AI Documentary (Images)", variable=var_project_type, value="Documentary", bg=BG_MAIN, font=font_label).pack(side=tk.LEFT, padx=20)
+tk.Radiobutton(type_frame, text="Reddit Story (Gameplay)", variable=var_project_type, value="Reddit Story", bg=BG_MAIN, font=font_label).pack(side=tk.RIGHT, padx=20)
 
 card1 = tk.Frame(root, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 card1.pack(fill=tk.X, padx=20, pady=10)
@@ -200,7 +305,7 @@ card2 = tk.Frame(root, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highl
 card2.pack(fill=tk.X, padx=20, pady=10)
 tk.Label(card2, text="CONTENT GENERATION", font=("Segoe UI", 9, "bold"), bg=BG_CARD, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
 
-tk.Label(card2, text="Main Topic:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w")
+tk.Label(card2, text="Main Topic (or Subreddit):", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w")
 topic_frame = tk.Frame(card2, bg=BG_CARD)
 topic_frame.pack(fill=tk.X, pady=(2, 2))
 entry_topic = tk.Entry(topic_frame, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
@@ -208,11 +313,11 @@ entry_topic.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 btn_trends = tk.Button(topic_frame, text="🔥 Trends", font=("Segoe UI", 9, "bold"), bg=ACCENT_TREND, fg="white", activebackground=ACCENT_TREND_ACTIVE, activeforeground="white", cursor="hand2", relief="flat", borderwidth=0, padx=10, command=on_find_trending)
 btn_trends.pack(side=tk.RIGHT)
 
-tk.Label(card2, text="Subtopics:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
+tk.Label(card2, text="Subtopics (Doc only):", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
 entry_subtopics = tk.Entry(card2, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
 entry_subtopics.pack(fill=tk.X, pady=(0, 5))
 
-tk.Label(card2, text="Custom Image Keywords (comma-separated):", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
+tk.Label(card2, text="Custom Keywords (Doc only):", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(10, 2))
 entry_custom_images = tk.Entry(card2, font=font_entry, bg=ENTRY_BG, fg=ENTRY_FG, insertbackground=FG_TEXT, relief="flat", highlightthickness=1, highlightbackground="#E5E7EB", highlightcolor=ACCENT_PRIMARY)
 entry_custom_images.pack(fill=tk.X, pady=(0, 5))
 
@@ -220,12 +325,19 @@ var_web_img = tk.BooleanVar(value=True)
 var_ai_img = tk.BooleanVar(value=True)
 check_frame = tk.Frame(card2, bg=BG_CARD)
 check_frame.pack(fill=tk.X, pady=(10, 0))
-tk.Checkbutton(check_frame, text="Web Scraping Images", variable=var_web_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.LEFT)
-tk.Checkbutton(check_frame, text="AI Generated Images", variable=var_ai_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.RIGHT)
+tk.Checkbutton(check_frame, text="Web Scrape", variable=var_web_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.LEFT)
+tk.Checkbutton(check_frame, text="AI Generate", variable=var_ai_img, font=("Segoe UI", 9), bg=BG_CARD, fg=FG_TEXT, activebackground=BG_CARD, selectcolor=BG_CARD).pack(side=tk.RIGHT)
 
 card3 = tk.Frame(root, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 card3.pack(fill=tk.X, padx=20, pady=10)
-tk.Label(card3, text="AUDIO SETTINGS", font=("Segoe UI", 9, "bold"), bg=BG_CARD, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
+tk.Label(card3, text="AUDIO & FORMAT SETTINGS", font=("Segoe UI", 9, "bold"), bg=BG_CARD, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
+
+tk.Label(card3, text="Video Format:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w", pady=(2, 2))
+format_frame = tk.Frame(card3, bg=BG_CARD)
+format_frame.pack(fill=tk.X, pady=(0, 10))
+var_format = tk.StringVar(value="Short")
+tk.Radiobutton(format_frame, text="TikTok/Short (9:16)", variable=var_format, value="Short", bg=BG_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+tk.Radiobutton(format_frame, text="YouTube (16:9)", variable=var_format, value="Long", bg=BG_CARD, font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=10)
 
 tk.Label(card3, text="Voice Preset:", font=font_label, bg=BG_CARD, fg=FG_TEXT).pack(anchor="w")
 combo_voice = ttk.Combobox(card3, values=list(VOICE_PRESETS.keys()), state="readonly", font=font_entry)
@@ -242,4 +354,3 @@ tk.Label(root, text="Trends → Gemini → Web Scrape/AI → Kokoro TTS → Vide
 
 root.bind('<Return>', on_generate)
 update_ui_style()
-root.mainloop()
