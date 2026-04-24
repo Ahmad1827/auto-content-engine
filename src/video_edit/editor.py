@@ -145,9 +145,9 @@ def burn_subtitles(video_path, srt_path, output_path, is_short=False):
     srt_abs = os.path.abspath(srt_path).replace("\\", "/").replace(":", "\\:")
     
     if is_short:
-        sub_style = f"subtitles='{srt_abs}':force_style='FontSize=22,FontName=Arial,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,Alignment=5'"
+        sub_style = f"subtitles='{srt_abs}':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H0000FFFF,BorderStyle=1,Outline=3,Shadow=2,BackColour=&H00000000,Alignment=5,MarginV=40'"
     else:
-        sub_style = f"subtitles='{srt_abs}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&H00FFFFFF,BorderStyle=3,Outline=1,Shadow=0,MarginV=30'"
+        sub_style = f"subtitles='{srt_abs}':force_style='FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,BorderStyle=3,BackColour=&H99000000,Outline=0,Shadow=0,Alignment=2,MarginV=20'"
 
     cmd = [
         "ffmpeg", "-y",

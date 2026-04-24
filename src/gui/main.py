@@ -34,9 +34,6 @@ def cleanup_old_assets():
         if os.path.exists(file):
             os.remove(file)
 
-# ---------------------------------------------------------
-# DOCUMENTARY & MANUAL PIPELINE
-# ---------------------------------------------------------
 def process_content(text, custom_keywords=""):
     if not text.strip():
         root.after(0, lambda: messagebox.showwarning("Warning", "The script is empty!"))
@@ -52,7 +49,6 @@ def process_content(text, custom_keywords=""):
         except:
             sec_per_img = 5
             
-        # PRELUĂM NUMĂRUL TOTAL DE POZE DORIT
         try:
             img_count = max(1, int(entry_img_count.get()))
         except:
@@ -60,7 +56,6 @@ def process_content(text, custom_keywords=""):
         
         if do_web or do_ai:
             root.after(0, lambda: messagebox.showinfo("Status", f"Fetching/Generating {img_count} images...\nThis will take a moment."))
-            # ATENȚIE: Am adăugat parametrul image_count aici!
             prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count)
         
         root.after(0, lambda: status_label.config(text="Generating Audio with Kokoro TTS...", fg="blue"))
@@ -90,9 +85,6 @@ def process_content(text, custom_keywords=""):
     finally:
         root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
 
-# ---------------------------------------------------------
-# REDDIT / GAMEPLAY PIPELINE
-# ---------------------------------------------------------
 def process_reddit_content(story, voice, is_short):
     try:
         cleanup_old_assets()
@@ -164,10 +156,6 @@ def open_reddit_picker(subreddit, voice, is_short):
         
     tk.Button(picker_win, text="Generate Video", bg=ACCENT_SECONDARY, fg="white", activebackground=ACCENT_SECONDARY_ACTIVE, activeforeground="white", font=("Segoe UI", 10, "bold"), cursor="hand2", command=on_select).pack(pady=10)
 
-
-# ---------------------------------------------------------
-# UI DYNAMICS & TRENDS
-# ---------------------------------------------------------
 def get_duration_minutes():
     try:
         return max(1, int(entry_minutes.get()))
@@ -180,7 +168,7 @@ def update_ui_visibility(*args):
     if source == "Reddit":
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="disabled")
-        entry_img_count.config(state="disabled") # DEZACTIVAT PT REDDIT
+        entry_img_count.config(state="disabled")
         check_web.config(state="disabled")
         check_ai.config(state="disabled")
         entry_minutes.config(state="disabled")
@@ -193,7 +181,7 @@ def update_ui_visibility(*args):
     elif source == "Manual Script":
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="normal")
-        entry_img_count.config(state="normal") # ACTIVAT PT MANUAL
+        entry_img_count.config(state="normal")
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="disabled")
@@ -206,7 +194,7 @@ def update_ui_visibility(*args):
     else: 
         entry_subtopics.config(state="normal")
         entry_custom_images.config(state="normal")
-        entry_img_count.config(state="normal") # ACTIVAT PT AI DOC
+        entry_img_count.config(state="normal")
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="normal")
@@ -258,9 +246,6 @@ def autofill_topic(selected_topic, original_topic, popup):
     var_source.set("AI Documentary")
     update_ui_visibility()
 
-# ---------------------------------------------------------
-# LAUNCH PIPELINE
-# ---------------------------------------------------------
 def on_generate(event=None):
     source = var_source.get()
     btn_generate.config(state=tk.DISABLED)
@@ -315,9 +300,6 @@ def on_generate(event=None):
     threading.Thread(target=pipeline, daemon=True).start()
 
 
-# ---------------------------------------------------------
-# GUI LAYOUT
-# ---------------------------------------------------------
 root = tk.Tk()
 root.title("Auto Content Engine Pro")
 root.geometry("980x500") 
@@ -339,7 +321,6 @@ main_content.columnconfigure(0, weight=1)
 main_content.columnconfigure(1, weight=1)
 main_content.columnconfigure(2, weight=1)
 
-# === COLOANA 1: SURSA TEXTULUI & FORMAT ===
 col1 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 col1.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
@@ -369,7 +350,6 @@ entry_scene_duration.insert(0, "4")
 entry_scene_duration.grid(row=1, column=1, padx=5, pady=2)
 
 
-# === COLOANA 2: DETALII CONTINUT ===
 col2 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 col2.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
@@ -393,14 +373,12 @@ entry_custom_images = tk.Entry(col2, font=font_entry)
 entry_custom_images.pack(fill=tk.X, pady=(2, 5))
 tk.Label(col2, text="(comma separated, for Manual/Doc mode)", font=("Segoe UI", 8), bg=BG_CARD, fg=FG_DIM).pack(anchor="w")
 
-# NOU: CĂSUȚA PENTRU NUMĂRUL DE POZE
 tk.Label(col2, text="Images to Fetch/Gen:", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(15, 2))
 entry_img_count = tk.Entry(col2, font=font_entry)
-entry_img_count.insert(0, "10") # Default va descărca/genera 10 poze
+entry_img_count.insert(0, "10")
 entry_img_count.pack(fill=tk.X, pady=(2, 5))
 
 
-# === COLOANA 3: AUDIO & GENERARE ===
 col3 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 col3.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
 
@@ -422,7 +400,6 @@ check_ai.pack(anchor="w", pady=(0, 30))
 btn_generate = tk.Button(col3, text="AI Generate Full Video", font=("Segoe UI", 11, "bold"), bg=ACCENT_PRIMARY, fg="white", cursor="hand2", pady=10, command=on_generate)
 btn_generate.pack(fill=tk.X, side=tk.BOTTOM)
 
-# Footer
 footer_frame = tk.Frame(root, bg=BG_MAIN)
 footer_frame.pack(fill=tk.X, pady=5)
 status_label = tk.Label(footer_frame, text="Ready", font=("Segoe UI", 10, "bold"), bg=BG_MAIN, fg=FG_DIM)
