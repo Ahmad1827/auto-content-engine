@@ -65,7 +65,7 @@ def apply_cyclical_ken_burns(clip, duration, VIDEO_SIZE, img_index):
         
     return VideoClip(make_frame, duration=duration)
 
-def create_video(srt_path=None, is_short=False):
+def create_video(srt_path=None, is_short=False, scene_duration=5): # <-- Parametru nou (default 5)
     audio_path = "video_final.wav"
     if not os.path.exists(audio_path):
         audio_path = "video_final.mp3"
@@ -74,7 +74,8 @@ def create_video(srt_path=None, is_short=False):
     music_path = "assets/music/background.mp3"
     output_path = "final_video.mp4"
 
-    SCENE_DURATION = 20
+    # FOLOSIM SETAREA DIN INTERFAȚĂ ÎN LOC SĂ FIE HARDCODATĂ
+    SCENE_DURATION = scene_duration 
     VIDEO_SIZE = (1080, 1920) if is_short else (1920, 1080)
 
     if not os.path.exists(audio_path):

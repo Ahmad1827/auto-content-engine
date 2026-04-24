@@ -3,7 +3,6 @@ from tkinter import messagebox, ttk
 import os
 import threading
 
-# Original Documentary Imports
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
 from voice_gen.subtitles import generate_srt_from_chunks
@@ -11,7 +10,6 @@ from video_edit.editor import create_video as create_doc_video
 from trend_finder.trends import get_trending, get_related
 from video_edit.downloader import prepare_assets
 
-# New Reddit/Gameplay Imports
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
 
@@ -47,16 +45,24 @@ def process_content(text, custom_keywords=""):
         cleanup_old_assets()
         do_web = var_web_img.get()
         do_ai = var_ai_img.get()
+        is_short = (var_format.get() == "Short")
         
-        # CITIM BUTONUL DIN UI
-        is_short = (var_format.get() == "Short") 
+        try:
+            sec_per_img = max(2, int(entry_scene_duration.get()))
+        except:
+            sec_per_img = 5
+            
+        # PRELUĂM NUMĂRUL TOTAL DE POZE DORIT
+        try:
+            img_count = max(1, int(entry_img_count.get()))
+        except:
+            img_count = 5
         
-        # Generare Imagini (Doar pt Documentar/Manual)
         if do_web or do_ai:
-            root.after(0, lambda: messagebox.showinfo("Status", "Analyzing script to fetch & generate images...\nThis will take a moment."))
-            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords)
+            root.after(0, lambda: messagebox.showinfo("Status", f"Fetching/Generating {img_count} images...\nThis will take a moment."))
+            # ATENȚIE: Am adăugat parametrul image_count aici!
+            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count)
         
-        # Audio TTS
         root.after(0, lambda: status_label.config(text="Generating Audio with Kokoro TTS...", fg="blue"))
         selected_voice = combo_voice.get()
         if selected_voice not in VOICE_PRESETS:
@@ -71,11 +77,9 @@ def process_content(text, custom_keywords=""):
         if chunk_timings:
             srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
             
-        # Randare Video Documentar
         root.after(0, lambda: status_label.config(text="Rendering cinematic video...", fg="blue"))
         
-        # TRIMITEM SETAREA MAI DEPARTE CĂTRE EDITOR
-        create_doc_video(srt_path=srt_path, is_short=is_short) 
+        create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
         
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
         root.after(0, lambda: status_label.config(text="Ready", fg=FG_DIM))
@@ -171,45 +175,46 @@ def get_duration_minutes():
         return 10
 
 def update_ui_visibility(*args):
-    """Actualizează interfața în funcție de sursa selectată (Reddit/Doc/Manual)"""
     source = var_source.get()
     
     if source == "Reddit":
-        # Disable Image Settings & Subtopics
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="disabled")
+        entry_img_count.config(state="disabled") # DEZACTIVAT PT REDDIT
         check_web.config(state="disabled")
         check_ai.config(state="disabled")
         entry_minutes.config(state="disabled")
+        entry_scene_duration.config(state="disabled")
         
         lbl_topic.config(text="Subreddit Name (no r/):")
         btn_generate.config(text="Fetch Reddit Stories", bg=ACCENT_TREND, activebackground=ACCENT_TREND_ACTIVE)
-        btn_trends.pack_forget() # Ascunde butonul de trends
+        btn_trends.pack_forget() 
         
     elif source == "Manual Script":
-        # Enable Image Settings, Disable Topics
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="normal")
+        entry_img_count.config(state="normal") # ACTIVAT PT MANUAL
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="disabled")
+        entry_scene_duration.config(state="normal")
         
         lbl_topic.config(text="Project Title (Optional):")
         btn_generate.config(text="Paste Script & Generate", bg=ACCENT_SECONDARY, activebackground=ACCENT_SECONDARY_ACTIVE)
         btn_trends.pack_forget()
         
-    else: # AI Documentary
-        # Enable Everything
+    else: 
         entry_subtopics.config(state="normal")
         entry_custom_images.config(state="normal")
+        entry_img_count.config(state="normal") # ACTIVAT PT AI DOC
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="normal")
+        entry_scene_duration.config(state="normal")
         
         lbl_topic.config(text="Main Topic / Subject:")
         btn_generate.config(text="AI Generate Full Video", bg=ACCENT_PRIMARY, activebackground=ACCENT_PRIMARY_ACTIVE)
-        btn_trends.pack(side=tk.RIGHT) # Arată butonul de trends
-
+        btn_trends.pack(side=tk.RIGHT) 
 
 def on_find_trending():
     topic_input = entry_topic.get().strip()
@@ -260,7 +265,6 @@ def on_generate(event=None):
     source = var_source.get()
     btn_generate.config(state=tk.DISABLED)
     
-    # 1. REDDIT MODE
     if source == "Reddit":
         sub = entry_topic.get().strip() or "AmItheAsshole"
         voice = combo_voice.get()
@@ -270,7 +274,6 @@ def on_generate(event=None):
 
     custom_kw = entry_custom_images.get().strip()
     
-    # 2. MANUAL SCRIPT MODE
     if source == "Manual Script":
         manual_window = tk.Toplevel(root)
         manual_window.title("Manual Input")
@@ -287,7 +290,6 @@ def on_generate(event=None):
         btn_generate.config(state=tk.NORMAL)
         return
 
-    # 3. AI DOCUMENTARY MODE
     topic = entry_topic.get()
     if not topic:
         messagebox.showwarning("Warning", "Please enter a topic!")
@@ -314,11 +316,11 @@ def on_generate(event=None):
 
 
 # ---------------------------------------------------------
-# GUI LAYOUT (WIDER & CLEANER)
+# GUI LAYOUT
 # ---------------------------------------------------------
 root = tk.Tk()
 root.title("Auto Content Engine Pro")
-root.geometry("980x500") # Design pe lățime
+root.geometry("980x500") 
 root.configure(bg=BG_MAIN)
 
 style = ttk.Style()
@@ -326,12 +328,10 @@ style.theme_use('clam')
 font_label = ("Segoe UI", 10, "bold")
 font_entry = ("Segoe UI", 11)
 
-# Header
 header_frame = tk.Frame(root, bg=BG_MAIN)
 header_frame.pack(fill=tk.X, pady=(15, 10))
 tk.Label(header_frame, text="AUTO CONTENT ENGINE", font=("Segoe UI", 18, "bold"), bg=BG_MAIN, fg=FG_TEXT).pack()
 
-# Creăm un Grid cu 3 coloane principale
 main_content = tk.Frame(root, bg=BG_MAIN)
 main_content.pack(fill=tk.BOTH, expand=True, padx=20)
 
@@ -351,15 +351,22 @@ ttk.Radiobutton(col1, text="🧠 AI Script (Documentary)", variable=var_source, 
 ttk.Radiobutton(col1, text="🔥 Reddit Story (Gameplay)", variable=var_source, value="Reddit", command=update_ui_visibility).pack(anchor="w", pady=2)
 ttk.Radiobutton(col1, text="✍️ Manual Script Paste", variable=var_source, value="Manual Script", command=update_ui_visibility).pack(anchor="w", pady=2)
 
-tk.Label(col1, text="Video Format:", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(20, 2))
+tk.Label(col1, text="Video Format:", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(15, 2))
 var_format = tk.StringVar(value="Short")
 ttk.Radiobutton(col1, text="📱 Vertical (9:16 Shorts)", variable=var_format, value="Short").pack(anchor="w", pady=2)
 ttk.Radiobutton(col1, text="🖥️ Horizontal (16:9 YouTube)", variable=var_format, value="Long").pack(anchor="w", pady=2)
 
-tk.Label(col1, text="Duration (AI Doc only):", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(20,2))
-entry_minutes = tk.Entry(col1, font=font_entry, width=10)
+frame_durations = tk.Frame(col1, bg=BG_CARD)
+frame_durations.pack(fill=tk.X, pady=(15, 0))
+tk.Label(frame_durations, text="Duration (AI Doc min):", font=font_label, bg=BG_CARD).grid(row=0, column=0, sticky="w", pady=2)
+entry_minutes = tk.Entry(frame_durations, font=font_entry, width=8)
 entry_minutes.insert(0, "10")
-entry_minutes.pack(anchor="w")
+entry_minutes.grid(row=0, column=1, padx=5, pady=2)
+
+tk.Label(frame_durations, text="Seconds per Image:", font=font_label, bg=BG_CARD).grid(row=1, column=0, sticky="w", pady=2)
+entry_scene_duration = tk.Entry(frame_durations, font=font_entry, width=8)
+entry_scene_duration.insert(0, "4")
+entry_scene_duration.grid(row=1, column=1, padx=5, pady=2)
 
 
 # === COLOANA 2: DETALII CONTINUT ===
@@ -386,6 +393,12 @@ entry_custom_images = tk.Entry(col2, font=font_entry)
 entry_custom_images.pack(fill=tk.X, pady=(2, 5))
 tk.Label(col2, text="(comma separated, for Manual/Doc mode)", font=("Segoe UI", 8), bg=BG_CARD, fg=FG_DIM).pack(anchor="w")
 
+# NOU: CĂSUȚA PENTRU NUMĂRUL DE POZE
+tk.Label(col2, text="Images to Fetch/Gen:", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(15, 2))
+entry_img_count = tk.Entry(col2, font=font_entry)
+entry_img_count.insert(0, "10") # Default va descărca/genera 10 poze
+entry_img_count.pack(fill=tk.X, pady=(2, 5))
+
 
 # === COLOANA 3: AUDIO & GENERARE ===
 col3 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
@@ -406,7 +419,6 @@ check_web.pack(anchor="w")
 check_ai = tk.Checkbutton(col3, text="Generate AI Images", variable=var_ai_img, bg=BG_CARD)
 check_ai.pack(anchor="w", pady=(0, 30))
 
-# Buton Generare
 btn_generate = tk.Button(col3, text="AI Generate Full Video", font=("Segoe UI", 11, "bold"), bg=ACCENT_PRIMARY, fg="white", cursor="hand2", pady=10, command=on_generate)
 btn_generate.pack(fill=tk.X, side=tk.BOTTOM)
 
@@ -416,6 +428,5 @@ footer_frame.pack(fill=tk.X, pady=5)
 status_label = tk.Label(footer_frame, text="Ready", font=("Segoe UI", 10, "bold"), bg=BG_MAIN, fg=FG_DIM)
 status_label.pack()
 
-# Initializare stari UI
 update_ui_visibility()
 root.bind('<Return>', on_generate)
