@@ -1,11 +1,11 @@
-# Auto Content Engine
+# Auto Content Engine Pro
 
-Automated YouTube video generator with AI narration.
+Automated dual-format video generator with AI narration, intelligent asset fetching, and cinematic editing.
 
 ## ⚙️ Project Architecture
 
 Data processing pipeline:
-`Gemini (Script) ➔ Kokoro TTS (Voice) ➔ MoviePy (Video)`
+`Trends / Gemini (Script) ➔ Web Scrape / Bing Image Creator (Assets) ➔ Kokoro TTS (Voice) ➔ FFmpeg (Subtitles & Edit) ➔ MoviePy (Final Render)`
 
 ---
 
@@ -20,7 +20,18 @@ The **Kokoro-82M** model (~300MB) runs locally and requires strict configuration
 * During installation, choose **Customize installation** and check all options.
 * **DO NOT** check "Add to PATH" to avoid conflicts with other Python versions already installed on your system.
 
-### 2. Install espeak-ng
+### 2. Install FFmpeg
+**Important:** FFmpeg is required for subtitle burning and cinematic rendering.
+* Download a Windows build (e.g., `ffmpeg-release-essentials.zip`) from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
+* Extract the folder to your `C:\` drive (e.g., `C:\ffmpeg`).
+* Open **CMD as Administrator** and add the program to the environment variables:
+
+```cmd
+setx PATH "%PATH%;C:\ffmpeg\bin" /M
+```
+* Close the CMD window after running.
+
+### 3. Install espeak-ng
 * Download the `.msi` file (e.g., `espeak-ng-20191129-b702b03-x64.msi`) from: [espeak-ng Releases](https://github.com/espeak-ng/espeak-ng/releases)
 * Install the program using the default settings.
 * Open **CMD as Administrator** and add the program to the environment variables:
@@ -30,16 +41,19 @@ setx PATH "%PATH%;C:\Program Files\eSpeak NG" /M
 ```
 * Close the CMD window after running.
 
-### 3. API Key Configuration
-The project requires access to the Gemini API.
-* Get your key from: [Google AI Studio](https://aistudio.google.com/apikey)
-* Create a file named `.env` in the root of the project and add the key:
+### 4. API Key Configuration
+The project uses Gemini for script and prompt generation, and optionally Bing and Pexels for images.
+* Create a file named `.env` in the root of the project.
+* Add your keys exactly like this:
 
 ```text
-GEMINI_API_KEY=your_key_here
+GEMINI_API_KEY="your_google_ai_studio_key"
+BING_COOKIE="your__U_cookie_value"
+BING_SRCH_COOKIE="your_SRCHHPGUSR_cookie_value"
+PEXELS_API_KEY="your_pexels_key_optional"
 ```
 
-### 4. Create Virtual Environment
+### 5. Create Virtual Environment
 Open a **standard CMD** terminal (not PowerShell) and run the commands below sequentially. The package installation will take between 5 and 15 minutes (it downloads PyTorch, ~2GB).
 
 ```cmd
@@ -48,14 +62,6 @@ cd /d "D:\Python projects\Auto_Content_Engine\auto-content-engine"
 kokoro_env\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
-
-### 5. Local Voice Testing
-The first run will download the Kokoro model from HuggingFace. Afterwards, it will work 100% offline. The generated file will be saved to `test_output/test_FULL.wav`.
-
-```cmd
-cd src\voice_gen
-python test_voice.py
 ```
 
 ---
@@ -89,8 +95,9 @@ python run.py
 | Problem | Solution |
 | :--- | :--- |
 | **numpy/torch build failed** | Incorrect Python version. You must exclusively use stable Python 3.12. |
-| **espeak-ng not found** | Install the MSI file and add the path to PATH (see step 2). |
+| **espeak-ng not found** | Install the MSI file and add the path to PATH (see step 3). |
+| **ffmpeg not found** | Install FFmpeg and add the `bin` folder to your PATH (see step 2). |
 | **activate.bat won't run** | You are in a PowerShell terminal. Type `cmd` first, or use the `.ps1` script. |
 | **pip installation seems stuck** | This is normal. It is downloading ~2GB of data. Wait 5-15 minutes. |
-| **Voice sounds too robotic** | Use the "calm" preset with the speed set to 0.85 instead of "narration". |
-| **Gemini 429 error** | Rate limited. Wait 1 minute and try again. |
+| **Bing AI Failed: Redirect failed** | Your Bing cookies (`_U` and `SRCHHPGUSR`) have expired. Log into Bing Image Creator in your browser, grab the new cookies from the Developer Tools (Application -> Cookies), and update your `.env` file. |
+| **Gemini 429 error** | Rate limited. Wait 1 minute and try again. Alternatively, use the "Manual Script Paste" option in the UI and provide specific image keywords. |
