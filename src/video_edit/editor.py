@@ -63,10 +63,9 @@ def apply_cyclical_ken_burns(clip, duration, VIDEO_SIZE, img_index):
         )
         return np.array(frame_img)
         
-    print(f"[Video Edit] Applying Effect {effect_type} for scene {img_index + 1}")
     return VideoClip(make_frame, duration=duration)
 
-def create_video(srt_path=None):
+def create_video(srt_path=None, is_short=False):
     audio_path = "video_final.wav"
     if not os.path.exists(audio_path):
         audio_path = "video_final.mp3"
@@ -76,12 +75,11 @@ def create_video(srt_path=None):
     output_path = "final_video.mp4"
 
     SCENE_DURATION = 20
-    VIDEO_SIZE = (1920, 1080)
+    VIDEO_SIZE = (1080, 1920) if is_short else (1920, 1080)
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError("Audio file missing.")
 
-    print("Preparing audio...")
     voice_clip = AudioFileClip(audio_path)
     total_duration = voice_clip.duration
 
@@ -92,7 +90,6 @@ def create_video(srt_path=None):
             background_music = AudioFileClip(music_path).with_duration(total_duration)
             background_music = background_music.with_volume_scaled(0.15)
             final_audio = CompositeAudioClip([voice_clip, background_music])
-            print("Music mixed successfully.")
         except Exception:
             pass
 
@@ -102,14 +99,12 @@ def create_video(srt_path=None):
     source_images = [os.path.join(pool_dir, img) for img in sorted(os.listdir(pool_dir)) if img.lower().endswith(('jpg', 'png', 'jpeg', 'webp'))]
 
     if not source_images:
-        print("Warning: No images found. Creating a temporary black placeholder.")
         placeholder_path = os.path.join(pool_dir, "fallback_black.jpg")
         img = Image.new('RGB', VIDEO_SIZE, color='black')
         img.save(placeholder_path)
         source_images = [placeholder_path]
 
     num_scenes_needed = int(total_duration / SCENE_DURATION) + 1
-    print(f"Creating {num_scenes_needed} scenes using {len(source_images)} source images.")
 
     clips = []
 
@@ -126,17 +121,14 @@ def create_video(srt_path=None):
         cinematic_clip = apply_cyclical_ken_burns(img_clip, current_scene_duration, VIDEO_SIZE, i)
         clips.append(cinematic_clip)
 
-    print("Assembling final video...")
     video = concatenate_videoclips(clips, method="compose")
     video = video.with_audio(final_audio)
 
     if srt_path and os.path.exists(srt_path):
         temp_path = "temp_no_subs.mp4"
-        print("Rendering high-quality video (without subtitles)...")
         video.write_videofile(temp_path, fps=24, codec="libx264", audio_codec="aac", bitrate="8000k", threads=4)
 
-        print("Burning subtitles with ffmpeg...")
-        success = burn_subtitles(temp_path, srt_path, output_path)
+        success = burn_subtitles(temp_path, srt_path, output_path, is_short)
 
         if os.path.exists(temp_path):
             if success:
@@ -144,18 +136,22 @@ def create_video(srt_path=None):
             else:
                 os.rename(temp_path, output_path)
     else:
-        print("Rendering high-quality final video (no subtitles)...")
         video.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac", bitrate="8000k", threads=4)
 
-    print(f"Video generation successful! Output: {output_path}")
     return output_path
 
-def burn_subtitles(video_path, srt_path, output_path):
+def burn_subtitles(video_path, srt_path, output_path, is_short=False):
     srt_abs = os.path.abspath(srt_path).replace("\\", "/").replace(":", "\\:")
+    
+    if is_short:
+        sub_style = f"subtitles='{srt_abs}':force_style='FontSize=22,FontName=Arial,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,Alignment=5'"
+    else:
+        sub_style = f"subtitles='{srt_abs}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&H00FFFFFF,BorderStyle=3,Outline=1,Shadow=0,MarginV=30'"
+
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
-        "-vf", f"subtitles='{srt_abs}':force_style='FontSize=18,FontName=Arial,PrimaryColour=&H00FFFFFF,BorderStyle=3,Outline=1,Shadow=0,MarginV=30'",
+        "-vf", sub_style,
         "-c:a", "copy",
         "-b:v", "8000k",
         output_path
@@ -165,8 +161,6 @@ def burn_subtitles(video_path, srt_path, output_path):
         if result.returncode == 0:
             return True
         else:
-            print(f"[Subtitles] ffmpeg error: {result.stderr[:200]}")
             return False
     except FileNotFoundError:
-        print("[Subtitles] ffmpeg not found! Video saved without subtitles.")
         return False

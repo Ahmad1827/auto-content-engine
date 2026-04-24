@@ -48,6 +48,9 @@ def process_content(text, custom_keywords=""):
         do_web = var_web_img.get()
         do_ai = var_ai_img.get()
         
+        # CITIM BUTONUL DIN UI
+        is_short = (var_format.get() == "Short") 
+        
         # Generare Imagini (Doar pt Documentar/Manual)
         if do_web or do_ai:
             root.after(0, lambda: messagebox.showinfo("Status", "Analyzing script to fetch & generate images...\nThis will take a moment."))
@@ -70,7 +73,10 @@ def process_content(text, custom_keywords=""):
             
         # Randare Video Documentar
         root.after(0, lambda: status_label.config(text="Rendering cinematic video...", fg="blue"))
-        create_doc_video(srt_path=srt_path)
+        
+        # TRIMITEM SETAREA MAI DEPARTE CĂTRE EDITOR
+        create_doc_video(srt_path=srt_path, is_short=is_short) 
+        
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
         root.after(0, lambda: status_label.config(text="Ready", fg=FG_DIM))
     except Exception as e:
