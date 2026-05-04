@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import os
 import threading
+import random 
+
 
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
@@ -9,6 +11,7 @@ from voice_gen.subtitles import generate_srt_from_chunks
 from video_edit.editor import create_video as create_doc_video
 from trend_finder.trends import get_trending, get_related
 from video_edit.downloader import prepare_assets
+
 
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
@@ -23,6 +26,8 @@ ACCENT_SECONDARY = "#10B981"
 ACCENT_SECONDARY_ACTIVE = "#059669"
 ACCENT_TREND = "#F43F5E"
 ACCENT_TREND_ACTIVE = "#E11D48"
+ACCENT_RANDOM = "#8B5CF6" 
+ACCENT_RANDOM_ACTIVE = "#7C3AED"
 ENTRY_BG = "#F3F4F6"
 ENTRY_FG = "#111827"
 
@@ -34,32 +39,32 @@ def cleanup_old_assets():
         if os.path.exists(file):
             os.remove(file)
 
-def process_content(text, custom_keywords=""):
+
+
+
+def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice):
     if not text.strip():
         root.after(0, lambda: messagebox.showwarning("Warning", "The script is empty!"))
         return
     try:
         cleanup_old_assets()
-        do_web = var_web_img.get()
-        do_ai = var_ai_img.get()
-        is_short = (var_format.get() == "Short")
         
         try:
-            sec_per_img = max(2, int(entry_scene_duration.get()))
+            sec_per_img = max(2, int(sec_per_img_str))
         except:
             sec_per_img = 5
             
         try:
-            img_count = max(1, int(entry_img_count.get()))
+            img_count = max(1, int(img_count_str))
         except:
             img_count = 5
         
         if do_web or do_ai:
             root.after(0, lambda: messagebox.showinfo("Status", f"Fetching/Generating {img_count} images...\nThis will take a moment."))
-            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count)
+            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count, is_short=is_short)
         
         root.after(0, lambda: status_label.config(text="Generating Audio with Kokoro TTS...", fg="blue"))
-        selected_voice = combo_voice.get()
+        selected_voice = voice
         if selected_voice not in VOICE_PRESETS:
              selected_voice = "🇺🇸 AM - Michael (Deep/News)"
         
@@ -73,7 +78,6 @@ def process_content(text, custom_keywords=""):
             srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
             
         root.after(0, lambda: status_label.config(text="Rendering cinematic video...", fg="blue"))
-        
         create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
         
         root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
@@ -84,6 +88,10 @@ def process_content(text, custom_keywords=""):
         root.after(0, lambda: status_label.config(text="Failed", fg="red"))
     finally:
         root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
+
+
+
 
 def process_reddit_content(story, voice, is_short):
     try:
@@ -113,6 +121,7 @@ def process_reddit_content(story, voice, is_short):
         root.after(0, lambda: status_label.config(text="Failed", fg="red"))
     finally:
         root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
 
 def open_reddit_picker(subreddit, voice, is_short):
     root.after(0, lambda: status_label.config(text=f"Fetching top stories from r/{subreddit}...", fg="blue"))
@@ -122,6 +131,7 @@ def open_reddit_picker(subreddit, voice, is_short):
         root.after(0, lambda: messagebox.showerror("Error", f"Could not find stories for r/{subreddit}."))
         root.after(0, lambda: status_label.config(text="Ready", fg=FG_DIM))
         root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
         return
 
     def on_select():
@@ -138,6 +148,7 @@ def open_reddit_picker(subreddit, voice, is_short):
     def on_close():
         picker_win.destroy()
         root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+        root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
         root.after(0, lambda: status_label.config(text="Ready", fg=FG_DIM))
 
     picker_win = tk.Toplevel(root)
@@ -156,6 +167,10 @@ def open_reddit_picker(subreddit, voice, is_short):
         
     tk.Button(picker_win, text="Generate Video", bg=ACCENT_SECONDARY, fg="white", activebackground=ACCENT_SECONDARY_ACTIVE, activeforeground="white", font=("Segoe UI", 10, "bold"), cursor="hand2", command=on_select).pack(pady=10)
 
+
+
+
+
 def get_duration_minutes():
     try:
         return max(1, int(entry_minutes.get()))
@@ -168,7 +183,7 @@ def update_ui_visibility(*args):
     if source == "Reddit":
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="disabled")
-        entry_img_count.config(state="disabled")
+        entry_img_count.config(state="disabled") 
         check_web.config(state="disabled")
         check_ai.config(state="disabled")
         entry_minutes.config(state="disabled")
@@ -181,7 +196,7 @@ def update_ui_visibility(*args):
     elif source == "Manual Script":
         entry_subtopics.config(state="disabled")
         entry_custom_images.config(state="normal")
-        entry_img_count.config(state="normal")
+        entry_img_count.config(state="normal") 
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="disabled")
@@ -194,7 +209,7 @@ def update_ui_visibility(*args):
     else: 
         entry_subtopics.config(state="normal")
         entry_custom_images.config(state="normal")
-        entry_img_count.config(state="normal")
+        entry_img_count.config(state="normal") 
         check_web.config(state="normal")
         check_ai.config(state="normal")
         entry_minutes.config(state="normal")
@@ -246,9 +261,139 @@ def autofill_topic(selected_topic, original_topic, popup):
     var_source.set("AI Documentary")
     update_ui_visibility()
 
+
+
+
+def on_random_viral():
+    format_choice = var_random_format.get()
+    type_choice = var_random_type.get()
+    
+    
+    btn_generate.config(state=tk.DISABLED)
+    btn_random_viral.config(state=tk.DISABLED)
+    status_label.config(text="Analyzing current internet trends...", fg="purple")
+
+    def fetch_and_propose():
+        try:
+            
+            results = get_trending(duration_min=10)
+            all_topics = results.get("rss", []) + results.get("pytrends", [])
+            
+            
+            valid_topics = [t for t in all_topics if len(t) > 3]
+            
+            if not valid_topics:
+                
+                valid_topics = ["Elon Musk Latest News", "Artificial Intelligence Future", "Weird History Facts", "Space Exploration"]
+            
+            def propose_topic():
+                
+                proposed = random.choice(valid_topics)
+                
+                
+                popup = tk.Toplevel(root)
+                popup.title("Trending Topic Found!")
+                popup.geometry("400x200")
+                popup.configure(bg=BG_MAIN)
+                popup.attributes("-topmost", True)
+                
+                tk.Label(popup, text="🔥 The algorithm found this trending topic:", font=("Segoe UI", 11), bg=BG_MAIN).pack(pady=(20, 5))
+                tk.Label(popup, text=proposed, font=("Segoe UI", 14, "bold"), fg=ACCENT_TREND, bg=BG_MAIN).pack(pady=5)
+                
+                def accept():
+                    popup.destroy()
+                    execute_viral_pipeline(proposed, format_choice, type_choice)
+                
+                def reject():
+                    popup.destroy()
+                    propose_topic() 
+                
+                def cancel():
+                    popup.destroy()
+                    btn_generate.config(state=tk.NORMAL)
+                    btn_random_viral.config(state=tk.NORMAL)
+                    status_label.config(text="Ready", fg=FG_DIM)
+
+                btn_frame = tk.Frame(popup, bg=BG_MAIN)
+                btn_frame.pack(pady=15)
+                
+                tk.Button(btn_frame, text="✅ Accept & Make Video", bg=ACCENT_SECONDARY, fg="white", font=("Segoe UI", 10, "bold"), command=accept).pack(side=tk.LEFT, padx=5)
+                tk.Button(btn_frame, text="🔄 Roll Again", bg=ACCENT_PRIMARY, fg="white", font=("Segoe UI", 10, "bold"), command=reject).pack(side=tk.LEFT, padx=5)
+                tk.Button(btn_frame, text="Cancel", bg="#9CA3AF", fg="white", font=("Segoe UI", 10, "bold"), command=cancel).pack(side=tk.LEFT, padx=5)
+
+            
+            root.after(0, propose_topic)
+
+        except Exception as e:
+            root.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch trends: {e}"))
+            root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+            root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
+            root.after(0, lambda: status_label.config(text="Failed", fg="red"))
+
+    threading.Thread(target=fetch_and_propose, daemon=True).start()
+
+def execute_viral_pipeline(topic, format_choice, type_choice):
+    status_label.config(text=f"Generating Viral {type_choice} for '{topic}'...", fg="purple")
+    
+    is_short = (format_choice == "9:16 Shorts")
+    voice = combo_voice.get() 
+    
+    
+    if type_choice == "Gameplay Video":
+        def gameplay_pipeline():
+            try:
+                
+                script = get_script(topic, "Viral Storytelling style", "1", "Gemini")
+                
+                if script.startswith(("Error:", "AI Error:")):
+                    root.after(0, lambda: messagebox.showerror("AI Error", script))
+                    root.after(0, lambda: reset_buttons())
+                    return
+                
+                
+                
+                fake_reddit_story = {
+                    'title': topic,
+                    'selftext': script,
+                    'body': script  
+                }
+                
+                process_reddit_content(fake_reddit_story, voice, is_short)
+            except Exception as e:
+                root.after(0, lambda: messagebox.showerror("Pipeline Error", f"Viral gameplay failed: {e}"))
+                root.after(0, lambda: reset_buttons())
+        threading.Thread(target=gameplay_pipeline, daemon=True).start()
+        
+    else:
+        def doc_pipeline():
+            try:
+                script = get_script(topic, "Quick Documentary summary", "1", "Gemini")
+                if script.startswith(("Error:", "AI Error:")):
+                    root.after(0, lambda: messagebox.showerror("AI Error", script))
+                    root.after(0, lambda: reset_buttons())
+                    return
+                
+                with open("generated_script.txt", "w", encoding="utf-8") as f:
+                    f.write(script)
+                
+                process_content(script, custom_keywords=topic, do_web=True, do_ai=True, is_short=is_short, sec_per_img_str="4", img_count_str="8", voice=voice)
+            except Exception as e:
+                root.after(0, lambda: messagebox.showerror("Pipeline Error", f"Viral doc failed: {e}"))
+                root.after(0, lambda: reset_buttons())
+        threading.Thread(target=doc_pipeline, daemon=True).start()
+
+def reset_buttons():
+    btn_generate.config(state=tk.NORMAL)
+    btn_random_viral.config(state=tk.NORMAL)
+    status_label.config(text="Ready", fg=FG_DIM)
+
+
+
+
 def on_generate(event=None):
     source = var_source.get()
     btn_generate.config(state=tk.DISABLED)
+    btn_random_viral.config(state=tk.DISABLED) 
     
     if source == "Reddit":
         sub = entry_topic.get().strip() or "AmItheAsshole"
@@ -258,6 +403,12 @@ def on_generate(event=None):
         return
 
     custom_kw = entry_custom_images.get().strip()
+    do_web = var_web_img.get()
+    do_ai = var_ai_img.get()
+    is_short = (var_format.get() == "Short")
+    sec_per_img_str = entry_scene_duration.get()
+    img_count_str = entry_img_count.get()
+    voice = combo_voice.get()
     
     if source == "Manual Script":
         manual_window = tk.Toplevel(root)
@@ -270,15 +421,24 @@ def on_generate(event=None):
         def start():
             content = txt_area.get("1.0", tk.END).strip()
             manual_window.destroy()
-            threading.Thread(target=process_content, args=(content, custom_kw), daemon=True).start()
+            threading.Thread(target=process_content, args=(content, custom_kw, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice), daemon=True).start()
+        
+        
+        def on_close_manual():
+            manual_window.destroy()
+            btn_generate.config(state=tk.NORMAL)
+            btn_random_viral.config(state=tk.NORMAL)
+            
+        manual_window.protocol("WM_DELETE_WINDOW", on_close_manual)
+        
         tk.Button(manual_window, text="START GENERATING", bg=ACCENT_SECONDARY, fg="white", font=("Segoe UI", 11, "bold"), command=start).pack(pady=15)
-        btn_generate.config(state=tk.NORMAL)
         return
 
     topic = entry_topic.get()
     if not topic:
         messagebox.showwarning("Warning", "Please enter a topic!")
         btn_generate.config(state=tk.NORMAL)
+        btn_random_viral.config(state=tk.NORMAL)
         return
         
     status_label.config(text="AI is writing the script...", fg="blue")
@@ -289,20 +449,28 @@ def on_generate(event=None):
                 root.after(0, lambda: messagebox.showerror("Error", script))
                 root.after(0, lambda: status_label.config(text="Failed", fg="red"))
                 root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+                root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
                 return
             with open("generated_script.txt", "w", encoding="utf-8") as f:
                 f.write(script)
-            process_content(script, custom_kw)
+            
+            process_content(script, custom_kw, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice)
         except Exception as e:
             root.after(0, lambda: messagebox.showerror("Error", f"Failed: {str(e)}"))
             root.after(0, lambda: status_label.config(text="Failed", fg="red"))
             root.after(0, lambda: btn_generate.config(state=tk.NORMAL))
+            root.after(0, lambda: btn_random_viral.config(state=tk.NORMAL))
     threading.Thread(target=pipeline, daemon=True).start()
+
+
+
 
 
 root = tk.Tk()
 root.title("Auto Content Engine Pro")
-root.geometry("980x500") 
+
+root.geometry("1200x900")
+root.minsize(1000, 800)
 root.configure(bg=BG_MAIN)
 
 style = ttk.Style()
@@ -320,6 +488,7 @@ main_content.pack(fill=tk.BOTH, expand=True, padx=20)
 main_content.columnconfigure(0, weight=1)
 main_content.columnconfigure(1, weight=1)
 main_content.columnconfigure(2, weight=1)
+
 
 col1 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 col1.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -350,6 +519,7 @@ entry_scene_duration.insert(0, "4")
 entry_scene_duration.grid(row=1, column=1, padx=5, pady=2)
 
 
+
 col2 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
 col2.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
@@ -375,8 +545,9 @@ tk.Label(col2, text="(comma separated, for Manual/Doc mode)", font=("Segoe UI", 
 
 tk.Label(col2, text="Images to Fetch/Gen:", font=font_label, bg=BG_CARD).pack(anchor="w", pady=(15, 2))
 entry_img_count = tk.Entry(col2, font=font_entry)
-entry_img_count.insert(0, "10")
+entry_img_count.insert(0, "10") 
 entry_img_count.pack(fill=tk.X, pady=(2, 5))
+
 
 
 col3 = tk.Frame(main_content, bg=BG_CARD, padx=20, pady=15, highlightthickness=1, highlightbackground="#E5E7EB")
@@ -397,8 +568,30 @@ check_web.pack(anchor="w")
 check_ai = tk.Checkbutton(col3, text="Generate AI Images", variable=var_ai_img, bg=BG_CARD)
 check_ai.pack(anchor="w", pady=(0, 30))
 
-btn_generate = tk.Button(col3, text="AI Generate Full Video", font=("Segoe UI", 11, "bold"), bg=ACCENT_PRIMARY, fg="white", cursor="hand2", pady=10, command=on_generate)
+btn_generate = tk.Button(col3, text="AI Generate Standard Video", font=("Segoe UI", 11, "bold"), bg=ACCENT_PRIMARY, fg="white", cursor="hand2", pady=10, command=on_generate)
 btn_generate.pack(fill=tk.X, side=tk.BOTTOM)
+
+
+
+viral_frame = tk.Frame(root, bg="#EDE9FE", padx=20, pady=15, highlightthickness=1, highlightbackground="#C4B5FD")
+viral_frame.pack(fill=tk.X, padx=30, pady=(10, 15))
+
+tk.Label(viral_frame, text="⚡ 1-CLICK VIRAL MAKER", font=("Segoe UI", 12, "bold"), bg="#EDE9FE", fg=ACCENT_RANDOM).pack(side=tk.LEFT, padx=(0, 20))
+
+
+var_random_format = tk.StringVar(value="9:16 Shorts")
+ttk.Radiobutton(viral_frame, text="📱 9:16 Shorts", variable=var_random_format, value="9:16 Shorts").pack(side=tk.LEFT, padx=10)
+ttk.Radiobutton(viral_frame, text="🖥️ 16:9 YouTube", variable=var_random_format, value="16:9 YouTube").pack(side=tk.LEFT, padx=10)
+
+
+var_random_type = tk.StringVar(value="Documentary (Images)")
+ttk.Radiobutton(viral_frame, text="🖼️ Documentary (Images)", variable=var_random_type, value="Documentary (Images)").pack(side=tk.LEFT, padx=10)
+ttk.Radiobutton(viral_frame, text="🎮 Gameplay (Background)", variable=var_random_type, value="Gameplay Video").pack(side=tk.LEFT, padx=10)
+
+
+btn_random_viral = tk.Button(viral_frame, text="GENERATE", font=("Segoe UI", 11, "bold"), bg=ACCENT_RANDOM, fg="white", activebackground=ACCENT_RANDOM_ACTIVE, cursor="hand2", pady=8, padx=20, command=on_random_viral)
+btn_random_viral.pack(side=tk.RIGHT)
+
 
 footer_frame = tk.Frame(root, bg=BG_MAIN)
 footer_frame.pack(fill=tk.X, pady=5)

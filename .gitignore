@@ -19,7 +19,7 @@ Thumbs.db
 *.mkv
 subtitles.srt
 generated_script.txt
-
+wsl_env/
 # Asset pools (keep folders, ignore contents)
 assets/curated_pool/*
 !assets/curated_pool/.gitkeep
