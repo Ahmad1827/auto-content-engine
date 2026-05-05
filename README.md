@@ -1,92 +1,58 @@
 # Auto Content Engine Pro
 
-Automated dual-format video generator with AI narration, intelligent asset fetching, and cinematic editing.
+Automated dual-format video generator with AI narration, intelligent asset fetching, and cinematic editing. Optimized for WSL (Ubuntu).
 
 ## ⚙️ Project Architecture
 
 Data processing pipeline:
-`Trends / Gemini (Script) ➔ Web Scrape / Bing Image Creator (Assets) ➔ Kokoro TTS (Voice) ➔ FFmpeg (Subtitles & Edit) ➔ MoviePy (Final Render)`
+`Trends / NewsAPI ➔ Gemini (Script) ➔ Web Scrape / Bing Image Creator ➔ Kokoro TTS (Voice) ➔ FFmpeg (Edit) ➔ MoviePy (Final Render)`
 
 ---
 
 ## 🛠️ System Requirements & Setup
 
-The **Kokoro-82M** model (~300MB) runs locally and requires strict configurations to work offline after the initial download.
+The **Kokoro-82M** model (~300MB) runs locally. This project is configured to run entirely inside **WSL2 (Ubuntu)**.
 
-### 1. Install Python 3.12
-**Important:** You must strictly use the stable 3.12 version. Do not use 3.13, 3.14, or beta versions, as the required packages will not build correctly.
+### 1. Install System Dependencies
+Open your Ubuntu terminal and install the required packages:
 
-* Download the **"Windows installer (64-bit)"** from: [Python 3.12 Releases](https://www.python.org/downloads/release/python-3120/)
-* During installation, choose **Customize installation** and check all options.
-* **DO NOT** check "Add to PATH" to avoid conflicts with other Python versions already installed on your system.
+    sudo apt update
+    sudo apt install ffmpeg espeak-ng python3.12-venv python3-pip
 
-### 2. Install FFmpeg
-**Important:** FFmpeg is required for subtitle burning and cinematic rendering.
-* Download a Windows build (e.g., `ffmpeg-release-essentials.zip`) from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/).
-* Extract the folder to your `C:\` drive (e.g., `C:\ffmpeg`).
-* Open **CMD as Administrator** and add the program to the environment variables:
+### 2. API Key Configuration
+Create a file named `.env` in the root of the project.
 
-```cmd
-setx PATH "%PATH%;C:\ffmpeg\bin" /M
-```
-* Close the CMD window after running.
+    GEMINI_API_KEY="your_google_ai_studio_key"
+    NEWS_API_KEY="your_newsapi_key"
+    EXPLODING_TOPICS_KEY=""
+    BING_COOKIE="your__U_cookie_value"
+    BING_SRCH_COOKIE="your_SRCHHPGUSR_cookie_value"
+    PEXELS_API_KEY="your_pexels_key_optional"
 
-### 3. Install espeak-ng
-* Download the `.msi` file (e.g., `espeak-ng-20191129-b702b03-x64.msi`) from: [espeak-ng Releases](https://github.com/espeak-ng/espeak-ng/releases)
-* Install the program using the default settings.
-* Open **CMD as Administrator** and add the program to the environment variables:
+### 3. Create Virtual Environment & Install Packages
+Navigate to your project folder inside WSL. The package installation will take a few minutes as it downloads PyTorch.
 
-```cmd
-setx PATH "%PATH%;C:\Program Files\eSpeak NG" /M
-```
-* Close the CMD window after running.
-
-### 4. API Key Configuration
-The project uses Gemini for script and prompt generation, and optionally Bing and Pexels for images.
-* Create a file named `.env` in the root of the project.
-* Add your keys exactly like this:
-
-```text
-GEMINI_API_KEY="your_google_ai_studio_key"
-BING_COOKIE="your__U_cookie_value"
-BING_SRCH_COOKIE="your_SRCHHPGUSR_cookie_value"
-PEXELS_API_KEY="your_pexels_key_optional"
-```
-
-### 5. Create Virtual Environment
-Open a **standard CMD** terminal (not PowerShell) and run the commands below sequentially. The package installation will take between 5 and 15 minutes (it downloads PyTorch, ~2GB).
-
-```cmd
-cd /d "D:\Python projects\Auto_Content_Engine\auto-content-engine"
-"C:\Users\massi\AppData\Local\Programs\Python\Python312\python.exe" -m venv kokoro_env
-kokoro_env\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+    python3 -m venv wsl_env
+    source wsl_env/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    pip install requests python-dotenv BingImageCreator pytrends
 
 ---
 
 ## 🚀 Running the App
 
-Navigate to the project folder and activate the virtual environment depending on your preferred terminal:
+Navigate to the project folder and activate the virtual environment:
 
-**Using PowerShell (e.g., VS Code Terminal):**
+    source wsl_env/bin/activate
+    python3 run.py
 
-If you receive a "scripts disabled" error, run this first: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
-
-```powershell
-cd "D:\Python projects\Auto_Content_Engine\auto-content-engine"
-.\kokoro_env\Scripts\Activate.ps1
-python run.py
-```
-
-**Using CMD:**
-
-```cmd
-cd /d "D:\Python projects\Auto_Content_Engine\auto-content-engine"
-kokoro_env\Scripts\activate.bat
-python run.py
-```
+### 1-Click Viral Maker
+1. Select format (`9:16 Shorts` or `16:9 YouTube`).
+2. Select media type (`Documentary` or `Gameplay`).
+3. Click **Generate Random Trending Video**.
+4. Approve the global trend fetched via NewsAPI or Google Trends.
+5. The app will generate the script, voice, subtitles, and video automatically.
 
 ---
 
@@ -94,10 +60,9 @@ python run.py
 
 | Problem | Solution |
 | :--- | :--- |
-| **numpy/torch build failed** | Incorrect Python version. You must exclusively use stable Python 3.12. |
-| **espeak-ng not found** | Install the MSI file and add the path to PATH (see step 3). |
-| **ffmpeg not found** | Install FFmpeg and add the `bin` folder to your PATH (see step 2). |
-| **activate.bat won't run** | You are in a PowerShell terminal. Type `cmd` first, or use the `.ps1` script. |
-| **pip installation seems stuck** | This is normal. It is downloading ~2GB of data. Wait 5-15 minutes. |
-| **Bing AI Failed: Redirect failed** | Your Bing cookies (`_U` and `SRCHHPGUSR`) have expired. Log into Bing Image Creator in your browser, grab the new cookies from the Developer Tools (Application -> Cookies), and update your `.env` file. |
-| **Gemini 429 error** | Rate limited. Wait 1 minute and try again. Alternatively, use the "Manual Script Paste" option in the UI and provide specific image keywords. |
+| **numpy/torch build failed** | Ensure you are using Python 3.12 inside WSL. |
+| **espeak-ng / ffmpeg not found** | Run `sudo apt install ffmpeg espeak-ng` in your Ubuntu terminal. |
+| **Exec format error (VS Code)** | WSL interop is off. Edit `/etc/wsl.conf`, add `[interop] enabled=true appendWindowsPath=true`, save, and run `wsl --shutdown` in Windows PowerShell. |
+| **Reddit pipeline failed: 'body'** | Ensure the generated AI script is passed as a dictionary containing `title`, `selftext`, and `body` keys before sending to the Reddit processor. |
+| **Bing AI Failed: Redirect failed** | Your Bing cookies (`_U` and `SRCHHPGUSR`) expired. Grab new ones from your browser (Developer Tools -> Application -> Cookies) and update `.env`. |
+| **Gemini 503 UNAVAILABLE** | Google servers are overloaded. Wait 30-60 seconds and click generate again. |
