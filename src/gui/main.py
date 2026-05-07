@@ -3,7 +3,7 @@ from tkinter import messagebox, ttk
 import os
 import threading
 import random
-
+from video_edit.thumbnail import create_thumbnail
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
 from voice_gen.subtitles import generate_srt_from_chunks
@@ -65,8 +65,11 @@ def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_
             
         root.after(0, lambda: status_label.config(text="Rendering cinematic video...", fg=WIN_TITLE))
         create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
-        
-        root.after(0, lambda: messagebox.showinfo("Success", "Video generated successfully! Check final_video.mp4"))
+        root.after(0, lambda: status_label.config(text="Painting Thumbnail...", fg=WIN_TITLE))
+        thumb_topic = custom_keywords if custom_keywords else "Trending Video"
+        create_thumbnail(topic_hint=thumb_topic)
+
+        root.after(0, lambda: messagebox.showinfo("Success", "Video & Thumbnail generated successfully! Check final_video.mp4 and thumbnail.jpg"))
         root.after(0, lambda: status_label.config(text="Ready", fg=TEXT_COLOR))
     except Exception as e:
         root.after(0, lambda: messagebox.showerror("Error", f"Processing failed: {str(e)}"))
