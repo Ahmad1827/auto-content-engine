@@ -1,10 +1,20 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
+import glob
+import json
 import os
-import sys
-import shutil
-import threading
+import platform
 import random
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+import customtkinter as ctk
+from PIL import Image
+
+from gui import theme as T
+from gui.theme import ROOT
 
 from script_gen.generator import get_script
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
@@ -21,99 +31,82 @@ except ImportError:
 
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
-from llm.provider import describe_provider
-from motion_gen.pipeline import make_motion_video
-from motion_gen.narration import CHATTERBOX_VOICES, chatterbox_available
+from llm.provider import describe_provider, generate
+from motion_gen.pipeline import OUTPUT_DIR, make_motion_video
+from motion_gen.narration import CHATTERBOX_VOICES, DEFAULT_PRESET, chatterbox_available
 
-MOTION_STYLES = {"Auto (AI picks)": "auto", "Atlas (dark history maps)": "atlas", "Ink (line art)": "ink",
-                 "Parchment (old map)": "parchment", "Neon (mystery / tech)": "neon", "Newspaper (1900s events)": "newspaper"}
+SETTINGS_PATH = os.path.join(ROOT, ".ace_settings.json")
+THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 
-BG_DESKTOP = "#008080"
-WIN_FACE = "#C0C0C0"
-WIN_TITLE = "#000080"
-WIN_TEXT = "#FFFFFF"
-TEXT_COLOR = "#000000"
-
-FONT_MAIN = ("W95FA", 10)
-FONT_BOLD = ("W95FA", 10, "bold")
+MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "line art"),
+                 ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s")]
+STAGES = {"motion": ["Script", "Voice", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
 BATCH_MODE = False
 batch_queue = []
 
 
+def _voice_label(key):
+    """Tk can't draw emoji, so flags become country codes: '🇺🇸 AM - Michael' -> 'US · AM - Michael'."""
+    flag = "".join(chr(ord(c) - 0x1F1E6 + 65) for c in key if 0x1F1E6 <= ord(c) <= 0x1F1FF)
+    text = re.sub(r"[^\u0000-￿]|️", "", key).strip()
+    return f"{flag} · {text}" if flag else text
 
 
-class RedirectText(object):
-    def __init__(self, text_widget, tag=None):
-        self.text_widget = text_widget
-        self.tag = tag
+KOKORO_VOICES = {_voice_label(k): k for k in VOICE_PRESETS}
+MOTION_VOICES = {**({_voice_label(k): k for k in CHATTERBOX_VOICES} if chatterbox_available() else {}), **KOKORO_VOICES}
 
-    def write(self, string):
-        self.text_widget.after(0, self._write, string)
 
-    def _write(self, string):
-        self.text_widget.config(state=tk.NORMAL)
-        if self.tag:
-            self.text_widget.insert(tk.END, string, (self.tag,))
-        else:
-            self.text_widget.insert(tk.END, string)
-        self.text_widget.see(tk.END)
-        self.text_widget.config(state=tk.DISABLED)
+def load_settings():
+    try:
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
 
-    def flush(self): pass
 
-class Win95ProgressBar(tk.Canvas):
-    def __init__(self, parent, height=20, bg="#FFFFFF", block_color="#000080", **kwargs):
-        super().__init__(parent, height=height, bg=bg, relief="sunken", bd=2, **kwargs)
-        self.block_color = block_color
-        self.max_val = 100
-        self.current_val = 0
-        self.bind("<Configure>", self.draw)
+def save_settings(**changes):
+    settings.update(changes)
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except OSError:
+        pass
 
-    def set_progress(self, val):
-        self.current_val = min(max(val, 0), self.max_val)
-        self.draw()
 
-    def draw(self, event=None):
-        self.delete("block")
-        if self.current_val <= 0: return
-        
-        width = self.winfo_width()
-        height = self.winfo_height()
-        
-        block_w = 12
-        gap = 2
-        total_blocks = int(width / (block_w + gap))
-        active_blocks = int((self.current_val / self.max_val) * total_blocks)
-        
-        for i in range(active_blocks):
-            x0 = 2 + i * (block_w + gap)
-            y0 = 2
-            x1 = x0 + block_w
-            y1 = height - 2
-            self.create_rectangle(x0, y0, x1, y1, fill=self.block_color, outline="", tags="block")
+def open_path(path):
+    if sys.platform == "win32":
+        os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    elif "microsoft" in platform.release().lower():
+        win_path = subprocess.run(["wslpath", "-w", path], capture_output=True, text=True).stdout.strip()
+        subprocess.Popen(["explorer.exe", win_path])
+    else:
+        subprocess.Popen(["xdg-open", path])
 
-def update_progress(val):
-    root.after(0, lambda: progress_bar.set_progress(val))
 
+def ui(fn, *args):
+    """Runs fn on the Tk thread; pipelines call this from worker threads."""
+    root.after(0, lambda: fn(*args))
+
+
+# ==========================================
+# PIPELINES (run on worker threads, raise on failure)
+# ==========================================
 def archive_output(base_video_path, topic_name):
-    safe_name = "".join(c for c in topic_name if c.isalnum() or c in " _-").strip().replace(" ", "_")
-    if not safe_name: safe_name = "Video"
+    safe_name = "".join(c for c in topic_name if c.isalnum() or c in " _-").strip().replace(" ", "_") or "Video"
     rand_id = random.randint(1000, 9999)
-    
     new_vid = f"Output_{safe_name}_{rand_id}.mp4"
     new_thumb = f"Output_{safe_name}_{rand_id}_Thumb.jpg"
-    
     if os.path.exists(base_video_path):
         shutil.move(base_video_path, new_vid)
     if os.path.exists("thumbnail.jpg"):
         shutil.move("thumbnail.jpg", new_thumb)
-        
     print(f"[System] Successfully archived as {new_vid}")
+    return os.path.abspath(new_vid)
 
-# ==========================================
-# PIPELINE LOGIC
-# ==========================================
+
 def cleanup_old_assets():
     print("[System] Cleaning up old temporary assets...")
     files_to_delete = ["video_final.wav", "video_final.mp3", "generated_script.txt",
@@ -123,795 +116,1026 @@ def cleanup_old_assets():
         if os.path.exists(file):
             os.remove(file)
 
-def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice, topic="Video"):
-    
-    if not text.strip():
-        root.after(0, lambda: messagebox.showwarning("Warning", "The script is empty!"))
-        return
-    try:
-        update_progress(5)
-        cleanup_old_assets()
-        try: sec_per_img = max(2, int(sec_per_img_str))
-        except: sec_per_img = 5
-        try: img_count = max(1, int(img_count_str))
-        except: img_count = 5
-        
-        update_progress(15)
-        if do_web or do_ai:
-            root.after(0, lambda: status_label.config(text=f"Fetching/Generating {img_count} images...", fg=WIN_TITLE))
-            prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count, is_short=is_short)
-        
-        update_progress(40)
-        root.after(0, lambda: status_label.config(text="Generating Audio with Kokoro TTS...", fg=WIN_TITLE))
-        selected_voice = voice if voice in VOICE_PRESETS else "🇺🇸 AM - Michael (Deep/News)"
-        audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset=selected_voice)
-        if not audio_path:
-            raise Exception("Audio generation failed!")
-            
-        update_progress(60)
-        srt_path = None
-        if chunk_timings:
-            srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt")
-            
-        update_progress(75)
-        root.after(0, lambda: status_label.config(text="Rendering cinematic video...", fg=WIN_TITLE))
-        create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
-        
-        update_progress(90)
-        root.after(0, lambda: status_label.config(text="Painting Thumbnail...", fg=WIN_TITLE))
-        thumb_topic = custom_keywords if custom_keywords else topic
-        create_thumbnail(topic_hint=thumb_topic)
 
-        update_progress(100)
-        archive_output("final_video.mp4", topic)
-        
-        if not BATCH_MODE:
-            root.after(0, lambda: messagebox.showinfo("Success", "Video & Thumbnail generated successfully!"))
-            root.after(0, lambda: status_label.config(text="Ready", fg=TEXT_COLOR))
-            
-    except Exception as e:
-        print(f"[Error] Pipeline Failed: {e}", file=sys.stderr)
-        root.after(0, lambda: status_label.config(text="Failed", fg="red"))
-    finally:
-        root.after(0, lambda: reset_buttons())
+def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice, topic="Video"):
+    if not text.strip():
+        raise ValueError("The script is empty.")
+    cleanup_old_assets()
+    try: sec_per_img = max(2, int(sec_per_img_str))
+    except ValueError: sec_per_img = 5
+    try: img_count = max(1, int(img_count_str))
+    except ValueError: img_count = 5
+
+    if do_web or do_ai:
+        progress(15, "Images", f"Fetching and generating {img_count} images...")
+        prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count, is_short=is_short)
+
+    progress(40, "Voice", "Recording the narration...")
+    selected_voice = voice if voice in VOICE_PRESETS else DEFAULT_PRESET
+    audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset=selected_voice)
+    if not audio_path:
+        raise RuntimeError("Audio generation failed!")
+    srt_path = generate_srt_from_chunks(chunk_timings, output_srt="subtitles.srt") if chunk_timings else None
+
+    progress(70, "Render", "Rendering the video...")
+    create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
+    progress(92, "Render", "Painting the thumbnail...")
+    create_thumbnail(topic_hint=custom_keywords or topic)
+    return archive_output("final_video.mp4", topic), None
+
 
 def process_gameplay_content(text_or_story, voice, is_short, topic="Video"):
-    
-    try:
-        update_progress(5)
-        cleanup_old_assets()
-        
-        
-        if isinstance(text_or_story, dict):
-            script = format_story_for_tts(text_or_story)
-            topic = text_or_story.get('title', 'Reddit_Story')
-        else:
-            script = text_or_story
-            
-        update_progress(20)
-        root.after(0, lambda: status_label.config(text="Generating Voice & Subtitles...", fg=WIN_TITLE))
-        audio_path, chunk_timings = generate_voice(script, output_path="short_audio.wav", preset=voice)
-        srt_path = generate_srt_from_chunks(chunk_timings, output_srt="short_subs.srt")
-        
-        update_progress(60)
-        root.after(0, lambda: status_label.config(text="Rendering Gameplay Video...", fg=WIN_TITLE))
-        bg_video = "assets/background.mp4"
-        out_name = "final_tiktok.mp4" if is_short else "final_youtube.mp4"
-        
-        success, msg = create_gameplay_video(audio_path, srt_path, bg_video_path=bg_video, output_path=out_name, is_short=is_short)
-        
-        update_progress(100)
-        if success:
-            archive_output(out_name, topic)
-            if not BATCH_MODE:
-                root.after(0, lambda: messagebox.showinfo("Success", f"Gameplay Video successfully rendered!"))
-                root.after(0, lambda: status_label.config(text="Ready", fg=TEXT_COLOR))
-        else:
-            print(f"[Render Error] {msg}", file=sys.stderr)
-            root.after(0, lambda: status_label.config(text="Failed", fg="red"))
-            
-    except Exception as e:
-        print(f"[Error] Gameplay pipeline failed: {e}", file=sys.stderr)
-        root.after(0, lambda: status_label.config(text="Failed", fg="red"))
-    finally:
-        root.after(0, lambda: reset_buttons())
+    cleanup_old_assets()
+    if isinstance(text_or_story, dict):
+        script = format_story_for_tts(text_or_story)
+        topic = text_or_story.get("title", "Reddit_Story")
+    else:
+        script = text_or_story
+
+    progress(20, "Voice", "Recording voice and subtitles...")
+    audio_path, chunk_timings = generate_voice(script, output_path="short_audio.wav", preset=voice)
+    srt_path = generate_srt_from_chunks(chunk_timings, output_srt="short_subs.srt")
+
+    progress(60, "Render", "Rendering over gameplay...")
+    out_name = "final_tiktok.mp4" if is_short else "final_youtube.mp4"
+    success, msg = create_gameplay_video(audio_path, srt_path, bg_video_path="assets/background.mp4", output_path=out_name, is_short=is_short)
+    if not success:
+        raise RuntimeError(f"Render failed: {msg}")
+    return archive_output(out_name, topic), None
 
 
-
-
-def process_motion(topic, style_label, voice, script=None):
-    """Motion-graphics TikTok: AI storyboard -> voice (Kokoro or Chatterbox) -> Remotion render.
-
-    Chatterbox voices only work here; the older pipelines fall back to Kokoro if one is selected."""
-    subject = f"Turn this script into the video, keeping its wording:\n{script}" if script else topic
+def process_motion(task):
+    """Motion-graphics TikTok: AI storyboard -> voice (Kokoro or Chatterbox) -> Remotion render."""
+    script = task.get("script")
+    subject = f"Turn this script into the video, keeping its wording:\n{script}" if script else task["topic"]
 
     def log(msg):
         print(msg)
-        if msg.startswith("[Voice] Scene"):
-            update_progress(25)
+        m = re.match(r"\[(?:Voice|Chatterbox)\] Scene (\d+)/(\d+)", msg)
+        if m:
+            done, total = int(m[1]), int(m[2])
+            progress(15 + 30 * (done - 1) / total, "Voice", f"Voicing scene {done} of {total}...")
         elif msg.startswith("[Render] Rendered"):
             try:
                 done, total = msg.split()[2].strip(",").split("/")
-                update_progress(40 + int(55 * int(done) / int(total)))
+                progress(45 + 55 * int(done) / int(total), "Render", f"Rendering frame {done} of {total}...")
             except (IndexError, ValueError):
                 pass
+        elif msg.startswith("[Render] Rendering"):
+            progress(45, "Render", "Rendering the video...")
 
+    progress(3, "Script", "Writing the storyboard...")
+    result = make_motion_video(subject, style=task["style"], voice=task["voice"], captions=task["captions"],
+                               handle=task["handle"], seconds=task["seconds"], log=log)
+    return result["video"], result["caption"]
+
+
+def run_task(task):
+    mode = task["mode"]
+    if mode == "motion":
+        return process_motion(task)
+    if mode == "reddit":
+        story = task.get("story")
+        if story is None:
+            stories = get_reddit_stories(subreddit=task["subreddit"], limit=1)
+            if not stories:
+                raise RuntimeError(f"No stories found on r/{task['subreddit']}.")
+            story = stories[0]
+        return process_gameplay_content(story, task["voice"], task["is_short"])
+
+    script = task.get("script")
+    if not script:
+        progress(3, "Script", "Writing the script...")
+        script = get_script(task["topic"], task["subtopics"], str(task["minutes"]))
+        if script.startswith(("Error:", "AI Error:")):
+            raise RuntimeError(f"Script generation failed: {script}")
+    with open("generated_script.txt", "w", encoding="utf-8") as f:
+        f.write(script)
+    if task["background"] == "Gameplay":
+        return process_gameplay_content(script, task["voice"], task["is_short"], task["topic"])
+    return process_content(script, task["keywords"], task["do_web"], task["do_ai"], task["is_short"],
+                           task["sec_per_img"], task["img_count"], task["voice"], task["topic"])
+
+
+def execute(task):
+    """Runs one task on the current (worker) thread and reports to the UI. Returns True on success."""
+    ui(job_started, task)
     try:
-        update_progress(5)
-        root.after(0, lambda: status_label.config(text=f"Motion video: {topic[:50]}...", fg=WIN_TITLE))
-        result = make_motion_video(subject, style=MOTION_STYLES.get(style_label, "auto"), voice=voice, log=log)
-        update_progress(100)
-        if not BATCH_MODE:
-            root.after(0, lambda: messagebox.showinfo("Done", f"Saved to:\n{result['video']}\n\nCaption:\n{result['caption']}"))
+        video, caption = run_task(task)
     except Exception as e:
-        print(f"[Error] Motion pipeline crashed: {e}", file=sys.stderr)
-    finally:
-        root.after(0, reset_buttons)
+        print(f"[Error] {e}", file=sys.stderr)
+        ui(job_failed, str(e))
+        return False
+    ui(job_done, video, caption)
+    return True
 
-def update_queue_ui():
-    queue_listbox.delete(0, tk.END)
-    for i, t in enumerate(batch_queue):
-        queue_listbox.insert(tk.END, f"{i+1}. [{t['format']}] {t['source']} ({t['bg_style']}) - {t['topic']}")
 
-def add_to_queue():
-    source = var_source.get()
-    topic = entry_topic.get().strip()
-    
-    if source != "Manual Script" and not topic:
-        messagebox.showwarning("Queue Error", "Please enter a Main Topic first!")
-        return
-        
-    task = {
-        "source": source,
-        "format": var_format.get(),
-        "bg_style": var_bg_style.get(),
-        "topic": topic if topic else "Manual_Video",
-        "subtopics": entry_subtopics.get().strip(),
-        "custom_kw": entry_custom_images.get().strip(),
-        "duration": get_duration_minutes(),
-        "scene_dur": entry_scene_duration.get(),
-        "img_count": entry_img_count.get(),
-        "voice": combo_voice.get(),
-        "motion_style": combo_motion_style.get(),
-        "do_web": var_web_img.get(),
-        "do_ai": var_ai_img.get()
-    }
-    
-    if source == "Manual Script":
-        manual_window = tk.Toplevel(root)
-        manual_window.title("")
-        manual_window.geometry("600x500")
-        manual_window.configure(bg=WIN_FACE)
-        
-        t_bar = tk.Frame(manual_window, bg=WIN_TITLE, relief="raised", bd=1)
-        t_bar.pack(fill=tk.X, padx=2, pady=2)
-        tk.Label(t_bar, text=" Notepad (Queue Mode) ", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT)
-        tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=WIN_FACE, command=manual_window.destroy).pack(side=tk.RIGHT, padx=2, pady=2)
+def run_now(task):
+    set_busy(True)
 
-        txt_frame = tk.Frame(manual_window, relief="sunken", bd=2, bg="#FFFFFF")
-        txt_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+    def worker():
+        execute(task)
+        ui(set_busy, False)
+    threading.Thread(target=worker, daemon=True).start()
 
-        txt_area = tk.Text(txt_frame, wrap=tk.WORD, width=70, height=15, font=("Courier", 11), bg="#FFFFFF", relief="flat")
-        txt_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        scrollbar = tk.Scrollbar(txt_frame, orient="vertical", command=txt_area.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
-        txt_area.config(yscrollcommand=scrollbar.set)
-        
-        def save_to_queue():
-            content = txt_area.get("1.0", tk.END).strip()
-            if not content:
-                messagebox.showwarning("Warning", "Cannot queue an empty script!")
-                return
-            manual_window.destroy()
-            task["manual_text"] = content
-            task["topic"] = task["custom_kw"] if task["custom_kw"] else "Manual_Video"
-            batch_queue.append(task)
-            update_queue_ui()
-            print(f"[Batch Manager] Manual Script added to queue as '{task['topic']}'")
-            
-        tk.Button(manual_window, text="Save to Queue", bg=WIN_FACE, fg=TEXT_COLOR, font=FONT_BOLD, relief="raised", bd=2, width=15, command=save_to_queue).pack(pady=10)
-        return
-
-    batch_queue.append(task)
-    update_queue_ui()
-    print(f"[Batch Manager] Task added: {topic}")
-
-def clear_queue():
-    global batch_queue
-    batch_queue = []
-    update_queue_ui()
-    print("[Batch Manager] Queue cleared.")
 
 def start_batch():
     global BATCH_MODE
     if not batch_queue:
-        messagebox.showinfo("Empty Queue", "Please add tasks to the queue first.")
+        set_status("The night shift queue is empty. Add a few videos first.", T.ACCENT)
         return
-        
     BATCH_MODE = True
-    btn_generate.config(state=tk.DISABLED)
-    btn_random_viral.config(state=tk.DISABLED)
-    btn_add_q.config(state=tk.DISABLED)
-    btn_start_q.config(state=tk.DISABLED)
-    
+    set_busy(True)
     threading.Thread(target=batch_worker, daemon=True).start()
+
 
 def batch_worker():
     global BATCH_MODE
-    print("\n" + "="*40)
-    print("🌙 NIGHT SHIFT BATCH PROCESSING STARTED")
-    print("="*40)
-    
+    print("\n" + "=" * 40 + "\nNIGHT SHIFT STARTED\n" + "=" * 40)
+    done = failed = 0
     while batch_queue:
         task = batch_queue.pop(0)
-        root.after(0, update_queue_ui)
-        
-        print(f"\n[Night Shift] Executing Task: {task['topic']}")
-        source = task["source"]
-        topic = task["topic"]
-        is_short = task["format"] == "Short"
-        bg_style = task["bg_style"]
-        
-        try:
-            if bg_style == "Motion" and source != "Reddit":
-                process_motion(topic, task.get("motion_style", "Auto (AI picks)"), task["voice"], script=task.get("manual_text"))
-                continue
-
-            if source == "Reddit":
-                stories = get_reddit_stories(subreddit=topic, limit=1)
-                if stories:
-                    process_gameplay_content(stories[0], task["voice"], is_short, topic)
-                else:
-                    print(f"[Night Shift Error] No stories found for r/{topic}. Skipping.", file=sys.stderr)
-                    
-            elif source == "Manual Script":
-                script = task.get("manual_text", "")
-                with open("generated_script.txt", "w", encoding="utf-8") as f:
-                    f.write(script)
-                
-                if bg_style == "Gameplay":
-                    process_gameplay_content(script, task["voice"], is_short, topic)
-                else:
-                    process_content(script, task["custom_kw"], task["do_web"], task["do_ai"], is_short, str(task["scene_dur"]), str(task["img_count"]), task["voice"], topic)
-                    
-            else: 
-                script = get_script(topic, task["subtopics"], str(task["duration"]))
-                if script.startswith(("Error:", "AI Error:")):
-                    print(f"[Night Shift Error] Script generation failed: {script}", file=sys.stderr)
-                else:
-                    with open("generated_script.txt", "w", encoding="utf-8") as f:
-                        f.write(script)
-                        
-                    if bg_style == "Gameplay":
-                        process_gameplay_content(script, task["voice"], is_short, topic)
-                    else:
-                        process_content(script, task["custom_kw"], task["do_web"], task["do_ai"], is_short, str(task["scene_dur"]), str(task["img_count"]), task["voice"], topic)
-                        
-        except Exception as e:
-            print(f"[Night Shift Error] Task crash: {e}", file=sys.stderr)
-            
-    print("\n" + "="*40)
-    print("🌅 NIGHT SHIFT COMPLETE! ALL VIDEOS RENDERED.")
-    print("="*40)
-    
+        ui(refresh_queue)
+        print(f"\n[Night Shift] Executing Task: {task['label']}")
+        if execute(task):
+            done += 1
+        else:
+            failed += 1
+    print("\n" + "=" * 40 + f"\nNIGHT SHIFT COMPLETE: {done} made, {failed} failed\n" + "=" * 40)
     BATCH_MODE = False
-    root.after(0, reset_buttons)
-    root.after(0, lambda: messagebox.showinfo("Night Shift Complete", "All queued videos have been successfully rendered and archived!"))
+    ui(set_busy, False)
+    ui(set_status, f"Night shift finished: {done} made" + (f", {failed} failed (see log)." if failed else "."),
+       T.BAD if failed else T.GOOD)
 
-
-
-
-def reset_buttons():
-    if BATCH_MODE: return
-    
-    btn_generate.config(state=tk.NORMAL)
-    btn_random_viral.config(state=tk.NORMAL)
-    btn_add_q.config(state=tk.NORMAL)
-    btn_start_q.config(state=tk.NORMAL)
-    status_label.config(text="Ready", fg=TEXT_COLOR)
-    update_progress(0)
-
-def hard_reset_app():
-    if BATCH_MODE:
-        messagebox.showwarning("Warning", "Cannot reboot while Night Shift is running!")
-        return
-        
-    entry_topic.delete(0, tk.END)
-    entry_subtopics.delete(0, tk.END)
-    entry_custom_images.delete(0, tk.END)
-    
-    entry_minutes.delete(0, tk.END); entry_minutes.insert(0, "10")
-    entry_scene_duration.delete(0, tk.END); entry_scene_duration.insert(0, "4")
-    entry_img_count.delete(0, tk.END); entry_img_count.insert(0, "10")
-    
-    var_source.set("AI Documentary")
-    var_format.set("Short")
-    var_bg_style.set("Images")
-    combo_voice.set("🇺🇸 AM - Michael (Deep/News)")
-    
-    update_ui_visibility()
-    reset_buttons()
-    clear_queue()
-    
-    console_text.config(state=tk.NORMAL)
-    console_text.delete("1.0", tk.END)
-    console_text.config(state=tk.DISABLED)
-    
-    print("Microsoft(R) Windows 95")
-    print("   (C)Copyright Microsoft Corp 1981-1996.")
-    print("\nC:\\ACE_PRO> System rebooted and memory cleared.")
-
-def open_reddit_picker(subreddit, voice, is_short):
-    root.after(0, lambda: status_label.config(text=f"Fetching top stories from r/{subreddit}...", fg=WIN_TITLE))
-    stories = get_reddit_stories(subreddit=subreddit, limit=10)
-    
-    if not stories:
-        root.after(0, lambda: messagebox.showerror("Error", f"Could not find stories for r/{subreddit}."))
-        root.after(0, lambda: reset_buttons())
-        return
-
-    def on_select():
-        selection = listbox.curselection()
-        if not selection:
-            messagebox.showwarning("Warning", "Select a story first!")
-            return
-        selected_story = stories[selection[0]]
-        picker_win.destroy()
-        
-        root.after(0, lambda: status_label.config(text="Processing Reddit Story...", fg=WIN_TITLE))
-        threading.Thread(target=process_gameplay_content, args=(selected_story, voice, is_short), daemon=True).start()
-
-    picker_win = tk.Toplevel(root)
-    picker_win.title("")
-    picker_win.geometry("520x400")
-    picker_win.configure(bg=WIN_FACE)
-    
-    t_bar = tk.Frame(picker_win, bg=WIN_TITLE, relief="raised", bd=1)
-    t_bar.pack(fill=tk.X, padx=2, pady=2)
-    tk.Label(t_bar, text=f" Select Story - r/{subreddit}", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT)
-    tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=WIN_FACE, command=picker_win.destroy).pack(side=tk.RIGHT, padx=2, pady=2)
-    
-    frame_list = tk.Frame(picker_win, relief="sunken", bd=2, bg="#FFFFFF")
-    frame_list.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-    listbox = tk.Listbox(frame_list, width=70, height=12, font=FONT_MAIN, bg="#FFFFFF", fg=TEXT_COLOR, relief="flat")
-    listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    
-    for s in stories: listbox.insert(tk.END, s['title'])
-    tk.Button(picker_win, text="OK", width=15, bg=WIN_FACE, font=FONT_BOLD, relief="raised", bd=2, command=on_select).pack(pady=10)
-
-def on_generate(event=None):
-    source = var_source.get()
-    bg_style = var_bg_style.get()
-    
-    btn_generate.config(state=tk.DISABLED)
-    btn_random_viral.config(state=tk.DISABLED) 
-    update_progress(0)
-    print("\n[System] Initialization started...")
-    
-    if source == "Reddit":
-        sub = entry_topic.get().strip() or "AmItheAsshole"
-        voice = combo_voice.get()
-        is_short = var_format.get() == "Short"
-        threading.Thread(target=open_reddit_picker, args=(sub, voice, is_short), daemon=True).start()
-        return
-
-    topic = entry_topic.get().strip()
-    custom_kw = entry_custom_images.get().strip()
-    do_web = var_web_img.get()
-    do_ai = var_ai_img.get()
-    is_short = (var_format.get() == "Short")
-    sec_per_img_str = entry_scene_duration.get()
-    img_count_str = entry_img_count.get()
-    voice = combo_voice.get()
-    
-    if source == "Manual Script":
-        manual_window = tk.Toplevel(root)
-        manual_window.title("")
-        manual_window.geometry("600x500")
-        manual_window.configure(bg=WIN_FACE)
-        
-        t_bar = tk.Frame(manual_window, bg=WIN_TITLE, relief="raised", bd=1)
-        t_bar.pack(fill=tk.X, padx=2, pady=2)
-        tk.Label(t_bar, text=" Notepad ", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT)
-        
-        def on_close_manual():
-            manual_window.destroy()
-            reset_buttons()
-            
-        tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=WIN_FACE, command=on_close_manual).pack(side=tk.RIGHT, padx=2, pady=2)
-
-        txt_frame = tk.Frame(manual_window, relief="sunken", bd=2, bg="#FFFFFF")
-        txt_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        txt_area = tk.Text(txt_frame, wrap=tk.WORD, width=70, height=15, font=("Courier", 11), bg="#FFFFFF", relief="flat")
-        txt_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        def start():
-            content = txt_area.get("1.0", tk.END).strip()
-            manual_window.destroy()
-            print(f"[System] User provided manual script. Background Mode: {bg_style}")
-            
-            if bg_style == "Motion":
-                threading.Thread(target=process_motion, args=(custom_kw or "Manual_Video", combo_motion_style.get(), voice, content), daemon=True).start()
-            elif bg_style == "Gameplay":
-                threading.Thread(target=process_gameplay_content, args=(content, voice, is_short, custom_kw or "Manual_Video"), daemon=True).start()
-            else:
-                threading.Thread(target=process_content, args=(content, custom_kw, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice, "Manual_Video"), daemon=True).start()
-            
-        manual_window.protocol("WM_DELETE_WINDOW", on_close_manual)
-        tk.Button(manual_window, text="Process", bg=WIN_FACE, fg=TEXT_COLOR, font=FONT_BOLD, relief="raised", bd=2, width=15, command=start).pack(pady=10)
-        return
-
-    if not topic:
-        messagebox.showwarning("Warning", "Please enter a topic!")
-        reset_buttons()
-        return
-        
-    if bg_style == "Motion":
-        threading.Thread(target=process_motion, args=(topic, combo_motion_style.get(), voice), daemon=True).start()
-        return
-
-    print(f"[AI] Writing script for topic: {topic}")
-    def pipeline():
-        try:
-            update_progress(5)
-            script = get_script(topic, entry_subtopics.get(), entry_minutes.get())
-            if script.startswith(("Error:", "AI Error:")):
-                print(f"[Error] Script generation failed: {script}", file=sys.stderr)
-                root.after(0, lambda: reset_buttons())
-                return
-            with open("generated_script.txt", "w", encoding="utf-8") as f:
-                f.write(script)
-                
-            if bg_style == "Gameplay":
-                process_gameplay_content(script, voice, is_short, topic)
-            else:
-                process_content(script, custom_kw, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice, topic)
-                
-        except Exception as e:
-            print(f"[Error] Pipeline crashed: {str(e)}", file=sys.stderr)
-            root.after(0, lambda: reset_buttons())
-            
-    threading.Thread(target=pipeline, daemon=True).start()
-
-def get_duration_minutes():
-    try: return max(1, int(entry_minutes.get()))
-    except: return 10
-
-def update_ui_visibility(*args):
-    source = var_source.get()
-    bg_style = var_bg_style.get()
-    
-    if source == "Reddit":
-        for widget in [entry_subtopics, entry_custom_images, entry_img_count, entry_minutes, entry_scene_duration]:
-            widget.config(state="disabled", bg=WIN_FACE)
-        for widget in [check_web, check_ai]: widget.config(state="disabled")
-        
-        rb_bg_images.config(state="disabled")
-        rb_bg_gameplay.config(state="disabled")
-        rb_bg_motion.config(state="disabled")
-        combo_motion_style.config(state="disabled")
-        btn_generate.config(text="FETCH REDDIT STORIES")
-    else:
-        rb_bg_images.config(state="normal")
-        rb_bg_gameplay.config(state="normal")
-        rb_bg_motion.config(state="normal")
-        
-        combo_motion_style.config(state="readonly" if bg_style == "Motion" else "disabled")
-        if bg_style == "Motion":
-            # Motion videos are always 9:16 and ~1 minute; image settings don't apply.
-            for widget in [entry_custom_images, entry_img_count, entry_scene_duration, entry_subtopics, entry_minutes]:
-                widget.config(state="disabled", bg=WIN_FACE)
-            for widget in [check_web, check_ai]: widget.config(state="disabled")
-            btn_generate.config(text="PASTE SCRIPT & ANIMATE" if source == "Manual Script" else "AI GENERATE MOTION VIDEO")
-            return
-        if bg_style == "Gameplay":
-            
-            for widget in [entry_custom_images, entry_img_count, entry_scene_duration]: widget.config(state="disabled", bg=WIN_FACE)
-            for widget in [check_web, check_ai]: widget.config(state="disabled")
-        else:
-            for widget in [entry_custom_images, entry_img_count, entry_scene_duration]: widget.config(state="normal", bg="#FFFFFF")
-            for widget in [check_web, check_ai]: widget.config(state="normal")
-            
-        if source == "Manual Script":
-            entry_subtopics.config(state="disabled", bg=WIN_FACE)
-            entry_minutes.config(state="disabled", bg=WIN_FACE)
-            btn_generate.config(text="PASTE SCRIPT & GENERATE")
-        else:
-            entry_subtopics.config(state="normal", bg="#FFFFFF")
-            entry_minutes.config(state="normal", bg="#FFFFFF")
-            btn_generate.config(text="AI GENERATE VIDEO")
-
-def on_find_trending():
-    topic_input = entry_topic.get().strip()
-    duration = get_duration_minutes()
-    def fetch():
-        if topic_input:
-            print(f"[Trends] Finding trends for '{topic_input}'...")
-            results = get_related(topic_input, duration_min=duration)
-        else:
-            print("[Trends] Finding trending topics globally...")
-            results = get_trending(duration_min=duration)
-            
-        rss = results.get("rss", [])
-        pytr = results.get("pytrends", [])
-        if not rss and not pytr:
-            print("[Trends] No topics found.", file=sys.stderr)
-            return
-            
-        win = tk.Toplevel(root)
-        win.title("")
-        win.geometry("450x500")
-        win.configure(bg=WIN_FACE)
-        
-        t_bar = tk.Frame(win, bg=WIN_TITLE, relief="raised", bd=1)
-        t_bar.pack(fill=tk.X, padx=2, pady=2)
-        tk.Label(t_bar, text=" Found Trends ", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT)
-        tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=WIN_FACE, command=win.destroy).pack(side=tk.RIGHT, padx=2, pady=2)
-
-        container = tk.Frame(win, bg=WIN_FACE, relief="sunken", bd=2)
-        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        def fill(t):
-            win.destroy()
-            entry_topic.delete(0, tk.END)
-            entry_topic.insert(0, t)
-            entry_subtopics.delete(0, tk.END)
-            if topic_input: entry_subtopics.insert(0, topic_input)
-            var_source.set("AI Documentary")
-            update_ui_visibility()
-
-        for t in rss_topics + pytrends_topics:
-            tk.Button(container, text=t, font=FONT_MAIN, bg=WIN_FACE, relief="raised", bd=2, anchor="w", padx=10, command=lambda topic=t: fill(topic)).pack(fill=tk.X, padx=5, pady=3)
-            
-    threading.Thread(target=fetch, daemon=True).start()
-
-def on_random_viral():
-    format_choice = var_random_format.get()
-    type_choice = var_random_type.get()
-    
-    btn_generate.config(state=tk.DISABLED)
-    btn_random_viral.config(state=tk.DISABLED)
-    update_progress(0)
-    print("\n[AutoViral] Analyzing internet for trending concepts...")
-
-    def fetch_and_propose():
-        try:
-            results = get_trending(duration_min=10)
-            all_topics = results.get("rss", []) + results.get("pytrends", [])
-            valid_topics = [t for t in all_topics if len(t) > 3]
-            if not valid_topics: valid_topics = ["Elon Musk", "AI Future", "Space Exploration"]
-            
-            def propose_topic():
-                proposed = random.choice(valid_topics)
-                popup = tk.Toplevel(root)
-                popup.geometry("450x220")
-                popup.configure(bg=WIN_FACE)
-                popup.attributes("-topmost", True)
-                
-                t_bar = tk.Frame(popup, bg=WIN_TITLE, relief="raised", bd=1)
-                t_bar.pack(fill=tk.X, padx=2, pady=2)
-                tk.Label(t_bar, text=" Viral Target ", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT)
-                
-                tk.Label(popup, text=proposed, font=FONT_BOLD, fg=TEXT_COLOR, bg=WIN_FACE, wraplength=400).pack(pady=20)
-                
-                btn_frame = tk.Frame(popup, bg=WIN_FACE)
-                btn_frame.pack(side=tk.BOTTOM, pady=15)
-                tk.Button(btn_frame, text="Yes", bg=WIN_FACE, font=FONT_BOLD, relief="raised", bd=2, width=10, command=lambda: [popup.destroy(), execute_viral_pipeline(proposed, format_choice, type_choice)]).pack(side=tk.LEFT, padx=5)
-                tk.Button(btn_frame, text="No", bg=WIN_FACE, font=FONT_BOLD, relief="raised", bd=2, width=10, command=lambda: [popup.destroy(), propose_topic()]).pack(side=tk.LEFT, padx=5)
-                tk.Button(btn_frame, text="Cancel", bg=WIN_FACE, font=FONT_BOLD, relief="raised", bd=2, width=10, command=lambda: [popup.destroy(), reset_buttons()]).pack(side=tk.LEFT, padx=5)
-
-            root.after(0, propose_topic)
-        except Exception as e:
-            print(f"[Error] {e}", file=sys.stderr)
-            root.after(0, reset_buttons)
-
-    threading.Thread(target=fetch_and_propose, daemon=True).start()
-
-def execute_viral_pipeline(topic, format_choice, type_choice):
-    print(f"\n[AutoViral] Generating {type_choice} about '{topic}'...")
-    is_short = (format_choice == "9:16 Shorts")
-    voice = combo_voice.get() 
-    
-    if type_choice == "Motion Graphics":
-        threading.Thread(target=process_motion, args=(topic, combo_motion_style.get(), voice), daemon=True).start()
-        return
-
-    if type_choice == "Gameplay Video":
-        def gameplay_pipeline():
-            try:
-                update_progress(5)
-                script = get_script(topic, "Viral Storytelling style", "1")
-                
-                process_gameplay_content(script, voice, is_short, topic)
-            except Exception as e: print(f"[Error] {e}", file=sys.stderr)
-        threading.Thread(target=gameplay_pipeline, daemon=True).start()
-    else:
-        def doc_pipeline():
-            try:
-                update_progress(5)
-                script = get_script(topic, "Quick Documentary summary", "1")
-                with open("generated_script.txt", "w", encoding="utf-8") as f: f.write(script)
-                process_content(script, topic, True, True, is_short, "4", "8", voice, topic)
-            except Exception as e: print(f"[Error] {e}", file=sys.stderr)
-        threading.Thread(target=doc_pipeline, daemon=True).start()
 
 # ==========================================
-# GUI SETUP (WIN 95 THEME)
+# UI STATE
 # ==========================================
-def create_groupbox(parent, title_text):
-    lf = tk.LabelFrame(parent, text=f" {title_text} ", font=FONT_MAIN, bg=WIN_FACE, fg=TEXT_COLOR, relief="groove", bd=2)
-    content_area = tk.Frame(lf, bg=WIN_FACE)
-    content_area.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-    return lf, content_area
-
-def create_pixel_radio(parent, text, var, val, cmd=None):
-    return tk.Radiobutton(parent, text=text, variable=var, value=val, command=cmd, font=FONT_MAIN, bg=WIN_FACE, activebackground=WIN_FACE, fg=TEXT_COLOR, relief="flat", highlightthickness=0)
-
-def create_pixel_check(parent, text, var):
-    return tk.Checkbutton(parent, text=text, variable=var, font=FONT_MAIN, bg=WIN_FACE, activebackground=WIN_FACE, fg=TEXT_COLOR, relief="flat", highlightthickness=0)
-
-root = tk.Tk()
-root.title("Auto Content Engine Pro")
-root.geometry("1100x950")
-root.configure(bg=BG_DESKTOP)
-style = ttk.Style()
-style.theme_use('classic')
-
-app_win = tk.Frame(root, bg=WIN_FACE, relief="raised", bd=3)
-app_win.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.96, relheight=0.96)
-
-t_bar = tk.Frame(app_win, bg=WIN_TITLE)
-t_bar.pack(fill=tk.X, padx=2, pady=2)
-tk.Label(t_bar, text=" Auto Content Engine Pro", font=FONT_BOLD, bg=WIN_TITLE, fg=WIN_TEXT).pack(side=tk.LEFT, pady=2)
-tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=WIN_FACE, padx=4, pady=0, command=root.quit).pack(side=tk.RIGHT, padx=2, pady=2)
-
-m_bar = tk.Frame(app_win, bg=WIN_FACE, relief="raised", bd=1)
-m_bar.pack(fill=tk.X)
-tk.Label(m_bar, text="File   Edit   View   Help", font=FONT_MAIN, bg=WIN_FACE, fg=TEXT_COLOR).pack(side=tk.LEFT, padx=5, pady=2)
-ai_label = tk.Label(m_bar, text="AI: detecting...", font=FONT_MAIN, bg=WIN_FACE, fg="#404040")
-ai_label.pack(side=tk.LEFT, padx=15)
-tk.Button(m_bar, text="[ REBOOT SYSTEM ]", font=FONT_BOLD, bg=WIN_FACE, fg="#800000", relief="raised", bd=2, command=hard_reset_app).pack(side=tk.RIGHT, padx=5, pady=2)
-
-main_content = tk.Frame(app_win, bg=WIN_FACE)
-main_content.pack(fill=tk.X, padx=10, pady=(10, 0))
-
-main_content.columnconfigure(0, weight=1)
-main_content.columnconfigure(1, weight=1)
-main_content.columnconfigure(2, weight=1)
+current_stages = []
 
 
-col1_panel, col1 = create_groupbox(main_content, "Settings.exe")
-col1_panel.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-tk.Label(col1, text="Text Source:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-var_source = tk.StringVar(value="AI Documentary")
-create_pixel_radio(col1, "AI Script", var_source, "AI Documentary", update_ui_visibility).pack(anchor="w", pady=2)
-create_pixel_radio(col1, "Reddit Story", var_source, "Reddit", update_ui_visibility).pack(anchor="w", pady=2)
-create_pixel_radio(col1, "Manual Script", var_source, "Manual Script", update_ui_visibility).pack(anchor="w", pady=2)
-tk.Label(col1, text="Video Format:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w", pady=(10, 2))
-var_format = tk.StringVar(value="Short")
-create_pixel_radio(col1, "Vertical (9:16)", var_format, "Short").pack(anchor="w", pady=2)
-create_pixel_radio(col1, "Horizontal (16:9)", var_format, "Long").pack(anchor="w", pady=2)
-frame_durations = tk.Frame(col1, bg=WIN_FACE)
-frame_durations.pack(fill=tk.X, pady=(10, 0))
-tk.Label(frame_durations, text="Duration (min):", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).grid(row=0, column=0, sticky="w", pady=2)
-entry_minutes = tk.Entry(frame_durations, font=FONT_MAIN, bg="#FFFFFF", fg=TEXT_COLOR, relief="sunken", bd=2, width=8); entry_minutes.insert(0, "10"); entry_minutes.grid(row=0, column=1, padx=5, pady=2)
-tk.Label(frame_durations, text="Secs per Image:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).grid(row=1, column=0, sticky="w", pady=2)
-entry_scene_duration = tk.Entry(frame_durations, font=FONT_MAIN, bg="#FFFFFF", fg=TEXT_COLOR, relief="sunken", bd=2, width=8); entry_scene_duration.insert(0, "4"); entry_scene_duration.grid(row=1, column=1, padx=5, pady=2)
+def progress(pct, stage=None, text=None):
+    ui(_progress, pct, stage, text)
 
 
-col2_panel, col2 = create_groupbox(main_content, "Content.dll")
-col2_panel.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-tk.Label(col2, text="Main Topic / Subject:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-topic_frame = tk.Frame(col2, bg=WIN_FACE)
-topic_frame.pack(fill=tk.X, pady=(2, 10))
-entry_topic = tk.Entry(topic_frame, font=FONT_MAIN, bg="#FFFFFF", relief="sunken", bd=2)
-entry_topic.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-tk.Button(topic_frame, text="Trends", bg=WIN_FACE, fg=TEXT_COLOR, font=FONT_BOLD, relief="raised", bd=2, command=on_find_trending).pack(side=tk.RIGHT)
-tk.Label(col2, text="Subtopics (Doc only):", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-entry_subtopics = tk.Entry(col2, font=FONT_MAIN, bg="#FFFFFF", relief="sunken", bd=2); entry_subtopics.pack(fill=tk.X, pady=(2, 10))
-tk.Label(col2, text="Custom Keywords:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-entry_custom_images = tk.Entry(col2, font=FONT_MAIN, bg="#FFFFFF", relief="sunken", bd=2); entry_custom_images.pack(fill=tk.X, pady=(2, 5))
-tk.Label(col2, text="Images to Gen:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w", pady=(10, 2))
-entry_img_count = tk.Entry(col2, font=FONT_MAIN, bg="#FFFFFF", relief="sunken", bd=2); entry_img_count.insert(0, "10"); entry_img_count.pack(fill=tk.X, pady=(2, 5))
+def _progress(pct, stage, text):
+    progress_bar.set(max(0, min(pct, 100)) / 100)
+    if stage:
+        _paint_stages(stage)
+    if text:
+        set_status(text)
 
 
-col3_panel, col3 = create_groupbox(main_content, "Render.bat")
-col3_panel.grid(row=0, column=2, sticky="nsew", padx=5, pady=5)
+def _paint_stages(active=None, all_done=False):
+    for w in stage_frame.winfo_children():
+        w.destroy()
+    reached = active not in current_stages
+    for i, name in enumerate(current_stages):
+        if i:
+            ctk.CTkLabel(stage_frame, text="—", font=T.font(T.MONO, 11), text_color=T.RULE).pack(side="left", padx=4)
+        if name == active:
+            reached = True
+        color = T.ACCENT if name == active and not all_done else (T.MUTED if reached and not all_done else T.INK)
+        ctk.CTkLabel(stage_frame, text=name.upper(), font=T.font(T.MONO, 11, "bold"), text_color=color).pack(side="left")
 
 
-tk.Label(col3, text="Background Style:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w", pady=(0, 2))
-var_bg_style = tk.StringVar(value="Images")
-rb_bg_images = create_pixel_radio(col3, "🖼️ Images (Ken Burns)", var_bg_style, "Images", update_ui_visibility)
-rb_bg_images.pack(anchor="w")
-rb_bg_gameplay = create_pixel_radio(col3, "🎮 Gameplay Video", var_bg_style, "Gameplay", update_ui_visibility)
-rb_bg_gameplay.pack(anchor="w")
-rb_bg_motion = create_pixel_radio(col3, "✨ Motion Graphics (AI)", var_bg_style, "Motion", update_ui_visibility)
-rb_bg_motion.pack(anchor="w")
-combo_motion_style = ttk.Combobox(col3, values=list(MOTION_STYLES.keys()), state="readonly", font=FONT_MAIN); combo_motion_style.set("Auto (AI picks)"); combo_motion_style.pack(fill=tk.X, pady=(2, 10))
+def set_status(text, color=T.INK):
+    status_label.configure(text=text, text_color=color)
 
 
-tk.Label(col3, text="Voice Actor:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-combo_voice = ttk.Combobox(col3, values=(list(CHATTERBOX_VOICES) if chatterbox_available() else []) + list(VOICE_PRESETS.keys()), state="readonly", font=FONT_MAIN); combo_voice.set("🇺🇸 AM - Michael (Deep/News)"); combo_voice.pack(fill=tk.X, pady=(2, 15))
-
-tk.Label(col3, text="Image Settings:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-var_web_img = tk.BooleanVar(value=True); var_ai_img = tk.BooleanVar(value=True)
-check_web = create_pixel_check(col3, "Scrape Web Images", var_web_img)
-check_web.pack(anchor="w")
-check_ai = create_pixel_check(col3, "Generate AI Images", var_ai_img)
-check_ai.pack(anchor="w", pady=(0, 15))
-
-btn_generate = tk.Button(col3, text="EXECUTE", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR, cursor="hand2", relief="raised", bd=2, pady=10, command=on_generate)
-btn_generate.pack(fill=tk.X, side=tk.BOTTOM)
+def job_started(task):
+    global current_stages
+    current_stages = STAGES[task["mode"]]
+    if task["mode"] == "doc" and task.get("script"):
+        current_stages = current_stages[1:]
+    _paint_stages(current_stages[0])
+    progress_bar.set(0)
+    result_actions.pack_forget()
+    set_status(f"Starting: {task['label']}")
 
 
-q_panel, q_frame = create_groupbox(app_win, "BatchManager.exe (Night Shift)")
-q_panel.pack(fill=tk.X, padx=15, pady=(5, 5))
-
-queue_listbox = tk.Listbox(q_frame, height=3, font=("Courier", 10), bg="#FFFFFF", fg=TEXT_COLOR, relief="sunken", bd=2)
-queue_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-
-btn_q_frame = tk.Frame(q_frame, bg=WIN_FACE)
-btn_q_frame.pack(side=tk.RIGHT)
-btn_add_q = tk.Button(btn_q_frame, text="Add Current To Queue", font=FONT_BOLD, bg=WIN_FACE, relief="raised", bd=2, width=20, command=add_to_queue)
-btn_add_q.pack(pady=(0, 2))
-btn_start_q = tk.Button(btn_q_frame, text="Start Night Shift", font=FONT_BOLD, bg=WIN_FACE, fg="#000080", relief="raised", bd=2, width=20, command=start_batch)
-btn_start_q.pack(pady=(0, 2))
-btn_clear_q = tk.Button(btn_q_frame, text="Clear Queue", font=FONT_MAIN, bg=WIN_FACE, relief="raised", bd=2, width=20, command=clear_queue)
-btn_clear_q.pack()
+def job_done(video, caption):
+    progress_bar.set(1)
+    _paint_stages(all_done=True)
+    set_status(f"Saved  {os.path.basename(video)}", T.GOOD)
+    play_btn.configure(command=lambda: open_path(video))
+    caption_btn.configure(command=lambda: copy_text(caption, "Caption copied."))
+    caption_btn.pack_forget() if not caption else caption_btn.pack(side="left", padx=(6, 0))
+    result_actions.pack(side="right", padx=(10, 0))
+    refresh_reel()
 
 
-viral_panel, viral_frame = create_groupbox(app_win, "AutoViral System")
-viral_panel.pack(fill=tk.X, padx=15, pady=(0, 5))
-var_random_format = tk.StringVar(value="9:16 Shorts")
-create_pixel_radio(viral_frame, "9:16 Shorts", var_random_format, "9:16 Shorts").pack(side=tk.LEFT, padx=10)
-create_pixel_radio(viral_frame, "16:9 YouTube", var_random_format, "16:9 YouTube").pack(side=tk.LEFT, padx=10)
-var_random_type = tk.StringVar(value="Documentary (Images)")
-create_pixel_radio(viral_frame, "Documentary", var_random_type, "Documentary (Images)").pack(side=tk.LEFT, padx=10)
-create_pixel_radio(viral_frame, "Gameplay", var_random_type, "Gameplay Video").pack(side=tk.LEFT, padx=10)
-create_pixel_radio(viral_frame, "Motion", var_random_type, "Motion Graphics").pack(side=tk.LEFT, padx=10)
-btn_random_viral = tk.Button(viral_frame, text="1-CLICK VIRAL", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR, relief="raised", bd=2, cursor="hand2", pady=5, padx=20, command=on_random_viral)
-btn_random_viral.pack(side=tk.RIGHT)
+def job_failed(message):
+    progress_bar.set(0)
+    set_status(f"Failed: {message[:120]}", T.BAD)
+    show_log(True)
 
 
-console_panel, console_frame = create_groupbox(app_win, "C:\\MS-DOS Prompt")
-console_panel.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
-console_text = tk.Text(console_frame, bg="black", fg="#C0C0C0", font=("Courier", 10, "bold"), relief="sunken", bd=2, state=tk.DISABLED)
-console_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-console_text.tag_config("error", foreground="#FF6B6B")
-
-scroll = tk.Scrollbar(console_frame, command=console_text.yview)
-scroll.pack(side=tk.RIGHT, fill=tk.Y)
-console_text.config(yscrollcommand=scroll.set)
-
-sys.stdout = RedirectText(console_text)
-sys.stderr = RedirectText(console_text, tag="error") 
-
-print("Microsoft(R) Windows 95")
-print("   (C)Copyright Microsoft Corp 1981-1996.")
-print("\nC:\\ACE_PRO> System ready.")
+def set_busy(busy):
+    if not busy and BATCH_MODE:
+        return
+    state = "disabled" if busy else "normal"
+    for panel in panels.values():
+        panel.make_btn.configure(state=state, text=panel.busy_text if busy else panel.make_text)
+    start_q_btn.configure(state=state)
 
 
-progress_frame = tk.Frame(app_win, bg=WIN_FACE)
-progress_frame.pack(fill=tk.X, padx=15, pady=(0, 5))
-tk.Label(progress_frame, text="Processing... ", font=FONT_MAIN, bg=WIN_FACE, fg=TEXT_COLOR).pack(side=tk.LEFT)
-progress_bar = Win95ProgressBar(progress_frame, height=20)
-progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+def copy_text(text, message):
+    root.clipboard_clear()
+    root.clipboard_append(text)
+    set_status(message, T.GOOD)
 
-status_bar = tk.Frame(app_win, bg=WIN_FACE, relief="sunken", bd=1)
-status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=2, pady=2)
-status_label = tk.Label(status_bar, text="Ready", font=FONT_MAIN, bg=WIN_FACE, fg=TEXT_COLOR, anchor="w", padx=5)
-status_label.pack(fill=tk.X)
 
-update_ui_visibility()
-root.bind('<Return>', on_generate)
+# ==========================================
+# WIDGET HELPERS
+# ==========================================
+def section(parent, number, title, pady=(22, 10)):
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", pady=pady)
+    ctk.CTkLabel(row, text=number, font=T.font(T.MONO, 12, "bold"), text_color=T.ACCENT).pack(side="left")
+    ctk.CTkLabel(row, text=title.upper(), font=T.font(T.MONO, 12, "bold"), text_color=T.MUTED).pack(side="left", padx=(10, 12))
+    ctk.CTkFrame(row, height=1, fg_color=T.RULE).pack(side="left", fill="x", expand=True, pady=(2, 0))
+    return row
+
+
+def entry(parent, placeholder="", width=140, size=14, height=38):
+    return ctk.CTkEntry(parent, placeholder_text=placeholder, width=width, height=height, font=T.font(T.SANS, size),
+                        fg_color=T.FIELD, border_color=T.RULE, border_width=1, text_color=T.INK,
+                        placeholder_text_color=T.MUTED, corner_radius=6)
+
+
+def ghost_button(parent, text, command, width=0, height=34):
+    return ctk.CTkButton(parent, text=text, command=command, width=width, height=height, font=T.font(T.SANS, 13, "bold"),
+                         fg_color="transparent", hover_color=T.FIELD_HOVER, border_width=1, border_color=T.RULE,
+                         text_color=T.INK, corner_radius=6)
+
+
+def link_button(parent, text, command, color=T.MUTED, size=12):
+    return ctk.CTkButton(parent, text=text, command=command, width=0, height=22, font=T.font(T.MONO, size),
+                         fg_color="transparent", hover_color=T.FIELD_HOVER, text_color=color, corner_radius=4)
+
+
+def option_menu(parent, values, value, command=None, width=320):
+    menu = ctk.CTkOptionMenu(parent, values=values, width=width, height=38, font=T.font(T.SANS, 14),
+                             dropdown_font=T.font(T.SANS, 13), fg_color=T.FIELD, button_color=T.FIELD,
+                             button_hover_color=T.FIELD_HOVER, text_color=T.INK, dropdown_fg_color=T.SURFACE,
+                             dropdown_hover_color=T.FIELD_HOVER, dropdown_text_color=T.INK, corner_radius=6,
+                             command=command, dynamic_resizing=False)
+    menu.set(value if value in values else values[0])
+    return menu
+
+
+def switch(parent, text, value=True):
+    var = ctk.BooleanVar(value=value)
+    ctk.CTkSwitch(parent, text=text, variable=var, font=T.font(T.SANS, 13), text_color=T.INK, progress_color=T.ACCENT,
+                  button_color=T.SURFACE, button_hover_color=T.FIELD, fg_color=T.RULE, switch_width=38,
+                  switch_height=20).pack(side="left", padx=(0, 22))
+    return var
+
+
+class Choice(ctk.CTkFrame):
+    """A row of pill buttons where exactly one is selected (CTk's segmented button can't colour text per state)."""
+
+    def __init__(self, parent, options, value, command=None, size=12, fg=T.FIELD, border=T.RULE,
+                 on=(T.INK, T.BG), off=T.MUTED, hover=T.FIELD_HOVER):
+        super().__init__(parent, fg_color=fg, corner_radius=8, border_width=1, border_color=border)
+        self.command = command
+        self.colors = on, off, hover
+        self.buttons = {}
+        for opt in options:
+            b = ctk.CTkButton(self, text=opt, width=0, height=30, font=T.font(T.MONO, size, "bold"), corner_radius=6,
+                              command=lambda o=opt: self.set(o, notify=True))
+            b.pack(side="left", padx=3, pady=3)
+            self.buttons[opt] = b
+        self.set(value if value in options else options[0])
+
+    def set(self, value, notify=False):
+        self.value = value
+        (on_bg, on_text), off_text, hover = self.colors
+        for opt, b in self.buttons.items():
+            on = opt == value
+            b.configure(fg_color=on_bg if on else "transparent", hover_color=on_bg if on else hover,
+                        text_color=on_text if on else off_text)
+        if notify and self.command:
+            self.command(value)
+
+    def get(self):
+        return self.value
+
+
+class ScriptToggle:
+    """'Paste my own script' link that reveals a text box under the subject field."""
+
+    def __init__(self, parent, on_change=None):
+        self.on = False
+        self.on_change = on_change
+        self.link = link_button(parent, "+ paste my own script instead", self.toggle, T.ACCENT)
+        self.link.pack(anchor="w", pady=(8, 0))
+        self.box = ctk.CTkTextbox(parent, height=150, font=T.font(T.SANS, 13), fg_color=T.FIELD, border_color=T.RULE,
+                                  border_width=1, text_color=T.INK, corner_radius=6, wrap="word")
+
+    def toggle(self):
+        self.on = not self.on
+        self.link.configure(text="– never mind, let the AI write it" if self.on else "+ paste my own script instead")
+        if self.on:
+            self.box.pack(fill="x", pady=(8, 0), after=self.link)
+            self.box.focus_set()
+        else:
+            self.box.pack_forget()
+        if self.on_change:
+            self.on_change(self.on)
+
+    def get(self):
+        return self.box.get("1.0", "end").strip() if self.on else ""
+
+
+def flash(widget):
+    widget.configure(border_color=T.ACCENT, border_width=2)
+    widget.focus_set()
+    root.after(1400, lambda: widget.configure(border_color=T.RULE, border_width=1))
+
+
+def pick_from_list(title, items, on_pick):
+    """Small themed chooser window (trending topics, Reddit stories)."""
+    win = ctk.CTkToplevel(root, fg_color=T.BG)
+    win.title(title)
+    win.geometry("560x520")
+    win.transient(root)
+    ctk.CTkLabel(win, text=title, font=T.font(T.SERIF, 26), text_color=T.INK).pack(anchor="w", padx=24, pady=(20, 8))
+    listing = ctk.CTkScrollableFrame(win, fg_color="transparent", scrollbar_button_color=T.RULE)
+    listing.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+
+    def choose(i):
+        win.destroy()
+        on_pick(i)
+
+    for i, text in enumerate(items):
+        ctk.CTkButton(listing, text=text, anchor="w", height=40, font=T.font(T.SANS, 13), fg_color=T.SURFACE,
+                      hover_color=T.FIELD_HOVER, text_color=T.INK, corner_radius=6,
+                      command=lambda i=i: choose(i)).pack(fill="x", pady=3, padx=4)
+    win.after(150, lambda: (win.lift(), win.focus_force()))
+    win.protocol("WM_DELETE_WINDOW", lambda: (win.destroy(), set_busy(False)) if not BATCH_MODE else win.destroy())
+    return win
+
+
+# ==========================================
+# MODE PANELS
+# ==========================================
+class MotionPanel(ctk.CTkFrame):
+    kicker, title = "MOTION GRAPHICS", "What's the story?"
+    blurb = "One moment from history or faith. The AI writes it, a voice tells it, maps and line art animate it."
+    make_text, busy_text = "Make the video  →", "Working on it..."
+
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent")
+        section(self, "01", "Subject", pady=(0, 10))
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x")
+        self.topic = entry(row, "e.g. the Dancing Plague of 1518", size=17, height=50)
+        self.topic.pack(side="left", fill="x", expand=True)
+        self.topic.bind("<Return>", lambda e: self.make())
+        self.dice = ghost_button(row, "Surprise me", self.roll_dice, height=50)
+        self.dice.pack(side="left", padx=(10, 0))
+        self.script = ScriptToggle(self, lambda on: self.topic.configure(
+            placeholder_text="Title for the file (optional)" if on else "e.g. the Dancing Plague of 1518"))
+
+        section(self, "02", "Look")
+        cards = ctk.CTkFrame(self, fg_color="transparent")
+        cards.pack(fill="x")
+        self.cards = {}
+        self.style = settings.get("motion_style", "auto")
+        for key, name, note in MOTION_STYLES:
+            self.cards[key] = self._card(cards, key, name, note)
+            self.cards[key].pack(side="left", padx=(0, 8))
+        self.pick_style(self.style)
+
+        section(self, "03", "Voice")
+        voices = list(MOTION_VOICES)
+        self.voice = option_menu(self, voices, settings.get("motion_voice", voices[0]), lambda v: save_settings(motion_voice=v))
+        self.voice.pack(anchor="w")
+        if not chatterbox_available():
+            ctk.CTkLabel(self, text="Chatterbox (the natural free voice) isn't installed; see the README.",
+                         font=T.font(T.MONO, 11), text_color=T.MUTED).pack(anchor="w", pady=(6, 0))
+
+        section(self, "04", "Runtime")
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x")
+        self.seconds = ctk.IntVar(value=settings.get("motion_seconds", 60))
+        self.seconds_label = ctk.CTkLabel(row, text="", width=64, anchor="w", font=T.font(T.SERIF, 26), text_color=T.INK)
+        ctk.CTkSlider(row, from_=20, to=90, number_of_steps=14, variable=self.seconds, width=220, height=16,
+                      progress_color=T.ACCENT, button_color=T.INK, button_hover_color=T.ACCENT, fg_color=T.RULE,
+                      command=lambda v: self._seconds_changed()).pack(side="left", padx=(0, 14))
+        self.seconds_label.pack(side="left", padx=(0, 26))
+        self._seconds_changed()
+        self.captions = switch(row, "Captions", settings.get("motion_captions", True))
+        self.handle = entry(row, "@yourhandle", width=150)
+        self.handle.pack(side="left")
+        if settings.get("handle"):
+            self.handle.insert(0, settings["handle"])
+
+        actions(self)
+
+    def _card(self, parent, key, name, note):
+        card = ctk.CTkFrame(parent, fg_color=T.SURFACE, corner_radius=8, border_width=2, border_color=T.RULE, cursor="hand2")
+        thumb_path = os.path.join(ROOT, "assets", "ui", f"style_{key}.jpg")
+        if os.path.exists(thumb_path):
+            img = ctk.CTkImage(Image.open(thumb_path), size=(84, 150))
+            art = ctk.CTkLabel(card, text="", image=img, width=84, height=150)
+        else:
+            art = ctk.CTkLabel(card, text="?", width=84, height=150, font=T.font(T.SERIF, 64, slant="italic"),
+                               text_color=T.ACCENT, fg_color=T.FIELD, corner_radius=4)
+        art.pack(padx=5, pady=(5, 4))
+        name_l = ctk.CTkLabel(card, text=name, font=T.font(T.SANS, 13, "bold"), text_color=T.INK, height=16)
+        name_l.pack()
+        note_l = ctk.CTkLabel(card, text=note, font=T.font(T.MONO, 10), text_color=T.MUTED, height=14)
+        note_l.pack(pady=(0, 7))
+        card.name_label = name_l
+        for w in (card, art, name_l, note_l):
+            w.bind("<Button-1>", lambda e, k=key: self.pick_style(k))
+        return card
+
+    def pick_style(self, key):
+        self.style = key
+        save_settings(motion_style=key)
+        for k, card in self.cards.items():
+            card.configure(border_color=T.ACCENT if k == key else T.RULE)
+            card.name_label.configure(text_color=T.ACCENT if k == key else T.INK)
+
+    def _seconds_changed(self):
+        self.seconds_label.configure(text=f"{self.seconds.get()}s")
+
+    def roll_dice(self):
+        self.dice.configure(state="disabled", text="Thinking...")
+        set_status("Asking the AI for a story worth telling...", T.MUTED)
+        recent = ", ".join(v["title"] for v in recent_videos(10))
+
+        def worker():
+            try:
+                idea = generate(
+                    "Suggest ONE specific, surprising and well-documented moment from history or religious history "
+                    "that would make a gripping 60-second TikTok. Be concrete (who, where, when). "
+                    f"Do not suggest any of these, already made: {recent or 'none'}. "
+                    "Return ONLY its name in at most 10 words, like 'The Great Emu War of 1932'.",
+                    schema={"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]})
+                ui(self._dice_result, idea["topic"].strip())
+            except Exception as e:
+                print(f"[Error] Idea failed: {e}", file=sys.stderr)
+                ui(self._dice_result, None)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _dice_result(self, topic):
+        self.dice.configure(state="normal", text="Surprise me")
+        if topic:
+            self.topic.delete(0, "end")
+            self.topic.insert(0, topic)
+            set_status("How about this one? Hit make, or roll again.")
+        else:
+            set_status("Couldn't get an idea from the AI (see log).", T.BAD)
+
+    def task(self):
+        topic, script = self.topic.get().strip(), self.script.get()
+        if not topic and not script:
+            flash(self.topic)
+            set_status("Give it a subject first, or let it surprise you.", T.ACCENT)
+            return None
+        handle = self.handle.get().strip()
+        if handle and not handle.startswith("@"):
+            handle = "@" + handle
+        save_settings(handle=handle, motion_seconds=self.seconds.get(), motion_captions=self.captions.get())
+        return {"mode": "motion", "topic": topic or "Manual_Video", "script": script, "style": self.style,
+                "voice": MOTION_VOICES[self.voice.get()], "seconds": self.seconds.get(), "captions": self.captions.get(),
+                "handle": handle, "label": f"Motion · {topic or 'own script'}"}
+
+    def make(self):
+        task = self.task()
+        if task:
+            run_now(task)
+
+
+class DocPanel(ctk.CTkFrame):
+    kicker, title = "DOCUMENTARY", "What should we cover?"
+    blurb = "A narrated video over web and AI images, with subtitles and a thumbnail. Long or short."
+    make_text, busy_text = "Make the video  →", "Working on it..."
+
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent")
+        section(self, "01", "Subject", pady=(0, 10))
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x")
+        self.topic = entry(row, "e.g. the fall of Constantinople", size=17, height=50)
+        self.topic.pack(side="left", fill="x", expand=True)
+        self.topic.bind("<Return>", lambda e: self.make())
+        self.trends_btn = ghost_button(row, "Trending", self.trends, height=50)
+        self.trends_btn.pack(side="left", padx=(10, 0))
+        self.subtopics = entry(self, "Angles to cover (optional), e.g. the siege, the cannons, aftermath")
+        self.subtopics.pack(fill="x", pady=(8, 0))
+        self.script = ScriptToggle(self)
+
+        section(self, "02", "Format")
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x")
+        self.format = Choice(row, ["9:16 VERTICAL", "16:9 HORIZONTAL"], settings.get("doc_format", "9:16 VERTICAL"),
+                             lambda v: save_settings(doc_format=v))
+        self.format.pack(side="left", padx=(0, 14))
+        self.background = Choice(row, ["IMAGES", "GAMEPLAY"], "IMAGES", lambda v: self._background_changed())
+        self.background.pack(side="left")
+
+        section(self, "03", "Voice")
+        voices = list(KOKORO_VOICES)
+        self.voice = option_menu(self, voices, settings.get("doc_voice", _voice_label(DEFAULT_PRESET)), lambda v: save_settings(doc_voice=v))
+        self.voice.pack(anchor="w")
+
+        section(self, "04", "Details")
+        grid = ctk.CTkFrame(self, fg_color="transparent")
+        grid.pack(fill="x")
+        self.fields = {}
+        for col, (key, label, default) in enumerate([("minutes", "Minutes", "10"), ("sec_per_img", "Secs / image", "4"),
+                                                     ("img_count", "Images", "10")]):
+            ctk.CTkLabel(grid, text=label, font=T.font(T.MONO, 11), text_color=T.MUTED).grid(row=0, column=col, sticky="w", padx=(0, 14))
+            e = entry(grid, width=110)
+            e.insert(0, default)
+            e.grid(row=1, column=col, sticky="w", padx=(0, 14))
+            self.fields[key] = e
+        ctk.CTkLabel(grid, text="Image keywords", font=T.font(T.MONO, 11), text_color=T.MUTED).grid(row=0, column=3, sticky="w")
+        self.keywords = entry(grid, "optional", width=200)
+        self.keywords.grid(row=1, column=3, sticky="w")
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", pady=(14, 0))
+        self.do_web = switch(row, "Web images")
+        self.do_ai = switch(row, "AI images")
+
+        actions(self)
+
+    def _background_changed(self):
+        state = "normal" if self.background.get() == "IMAGES" else "disabled"
+        for w in (self.fields["sec_per_img"], self.fields["img_count"], self.keywords):
+            w.configure(state=state)
+
+    def trends(self):
+        seed = self.topic.get().strip()
+        self.trends_btn.configure(state="disabled", text="Looking...")
+        set_status(f"Looking for trends around '{seed}'..." if seed else "Looking for what's trending...", T.MUTED)
+
+        def worker():
+            try:
+                minutes = int(self.fields["minutes"].get() or 10)
+            except ValueError:
+                minutes = 10
+            try:
+                results = get_related(seed, duration_min=minutes) if seed else get_trending(duration_min=minutes)
+                topics = results.get("rss", []) + results.get("pytrends", [])
+            except Exception as e:
+                print(f"[Trends] {e}", file=sys.stderr)
+                topics = []
+            ui(self._show_trends, topics, seed)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_trends(self, topics, seed):
+        self.trends_btn.configure(state="normal", text="Trending")
+        if not topics:
+            set_status("No trending topics found right now.", T.BAD)
+            return
+        set_status(f"Found {len(topics)} topics.")
+
+        def fill(i):
+            self.topic.delete(0, "end")
+            self.topic.insert(0, topics[i])
+            if seed:
+                self.subtopics.delete(0, "end")
+                self.subtopics.insert(0, seed)
+        pick_from_list("Trending now", topics, fill)
+
+    def task(self):
+        topic, script = self.topic.get().strip(), self.script.get()
+        if not topic and not script:
+            flash(self.topic)
+            set_status("What's the documentary about?", T.ACCENT)
+            return None
+        f = {k: e.get().strip() for k, e in self.fields.items()}
+        try:
+            minutes = max(1, int(f["minutes"]))
+        except ValueError:
+            minutes = 10
+        return {"mode": "doc", "topic": topic or self.keywords.get().strip() or "Manual_Video", "script": script,
+                "subtopics": self.subtopics.get().strip(), "minutes": minutes,
+                "is_short": self.format.get().startswith("9:16"), "background": self.background.get().title(),
+                "sec_per_img": f["sec_per_img"], "img_count": f["img_count"], "keywords": self.keywords.get().strip(),
+                "do_web": self.do_web.get(), "do_ai": self.do_ai.get(), "voice": KOKORO_VOICES[self.voice.get()],
+                "label": f"Documentary · {topic or 'own script'}"}
+
+    def make(self):
+        task = self.task()
+        if task:
+            run_now(task)
+
+
+class RedditPanel(ctk.CTkFrame):
+    kicker, title = "REDDIT STORY", "Pick a subreddit."
+    blurb = "A top story read aloud over gameplay footage (assets/background.mp4), with bold subtitles."
+    make_text, busy_text = "Find stories  →", "Working on it..."
+
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent")
+        section(self, "01", "Subreddit", pady=(0, 10))
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x")
+        ctk.CTkLabel(row, text="r/", font=T.font(T.SERIF, 30), text_color=T.MUTED).pack(side="left", padx=(0, 6))
+        self.sub = entry(row, "AmItheAsshole", size=17, height=50)
+        self.sub.pack(side="left", fill="x", expand=True)
+        self.sub.bind("<Return>", lambda e: self.make())
+
+        section(self, "02", "Format")
+        self.format = Choice(self, ["9:16 VERTICAL", "16:9 HORIZONTAL"], "9:16 VERTICAL")
+        self.format.pack(anchor="w")
+
+        section(self, "03", "Voice")
+        voices = list(KOKORO_VOICES)
+        self.voice = option_menu(self, voices, settings.get("reddit_voice", _voice_label(DEFAULT_PRESET)), lambda v: save_settings(reddit_voice=v))
+        self.voice.pack(anchor="w")
+
+        actions(self, queue_hint="Night shift takes the top story.")
+
+    def task(self):
+        sub = self.sub.get().strip().removeprefix("r/") or "AmItheAsshole"
+        return {"mode": "reddit", "subreddit": sub, "is_short": self.format.get().startswith("9:16"),
+                "voice": KOKORO_VOICES[self.voice.get()], "label": f"Reddit · r/{sub}"}
+
+    def make(self):
+        task = self.task()
+        set_busy(True)
+        set_status(f"Fetching top stories from r/{task['subreddit']}...", T.MUTED)
+
+        def worker():
+            try:
+                stories = get_reddit_stories(subreddit=task["subreddit"], limit=10)
+            except Exception as e:
+                print(f"[Reddit] {e}", file=sys.stderr)
+                stories = []
+            ui(self._choose, task, stories)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _choose(self, task, stories):
+        if not stories:
+            set_busy(False)
+            set_status(f"Couldn't find stories on r/{task['subreddit']}.", T.BAD)
+            return
+        set_status("Pick a story.")
+
+        def picked(i):
+            set_busy(False)
+            run_now(dict(task, story=stories[i], label=f"Reddit · {stories[i]['title'][:60]}"))
+        pick_from_list(f"r/{task['subreddit']}", [s["title"] for s in stories], picked)
+
+
+def actions(panel, queue_hint=""):
+    row = ctk.CTkFrame(panel, fg_color="transparent")
+    row.pack(fill="x", pady=(34, 0))
+    panel.make_btn = ctk.CTkButton(row, text=panel.make_text, command=panel.make, width=250, height=54,
+                                   font=T.font(T.SANS, 16, "bold"), fg_color=T.ACCENT, hover_color=T.ACCENT_HOVER,
+                                   text_color=T.ON_ACCENT, text_color_disabled=T.ON_ACCENT, corner_radius=8)
+    panel.make_btn.pack(side="left")
+    ghost_button(row, "+ Add to night shift", lambda: add_to_queue(panel), width=190, height=54).pack(side="left", padx=(12, 0))
+    if queue_hint:
+        ctk.CTkLabel(row, text=queue_hint, font=T.font(T.MONO, 11), text_color=T.MUTED).pack(side="left", padx=(14, 0))
+
+
+# ==========================================
+# NIGHT SHIFT + REEL
+# ==========================================
+def add_to_queue(panel):
+    task = panel.task()
+    if not task:
+        return
+    batch_queue.append(task)
+    refresh_queue()
+    set_status(f"Queued for the night shift: {task['label']}", T.GOOD)
+    print(f"[Batch Manager] Task added: {task['label']}")
+
+
+def remove_from_queue(index):
+    if 0 <= index < len(batch_queue):
+        batch_queue.pop(index)
+    refresh_queue()
+
+
+def clear_queue():
+    batch_queue.clear()
+    refresh_queue()
+
+
+def refresh_queue():
+    for w in queue_list.winfo_children():
+        w.destroy()
+    queue_count.configure(text=f"{len(batch_queue):02d}")
+    if not batch_queue:
+        ctk.CTkLabel(queue_list, text="Nothing queued. Line up videos,\nstart the shift, go to sleep.",
+                     font=T.font(T.MONO, 11), text_color=T.MUTED, justify="left").pack(anchor="w", pady=4)
+        return
+    for i, task in enumerate(batch_queue):
+        row = ctk.CTkFrame(queue_list, fg_color="transparent")
+        row.pack(fill="x", pady=1)
+        ctk.CTkLabel(row, text=f"{i + 1:02d}", font=T.font(T.MONO, 11, "bold"), text_color=T.ACCENT).pack(side="left")
+        ctk.CTkLabel(row, text=task["label"][:34], font=T.font(T.SANS, 12), text_color=T.INK, anchor="w").pack(side="left", padx=8)
+        if not BATCH_MODE:
+            link_button(row, "×", lambda i=i: remove_from_queue(i), size=14).pack(side="right")
+
+
+def _prettify(stem):
+    if stem.startswith("Output_"):
+        stem = re.sub(r"^Output_|_\d{4}$", "", stem)
+    return stem.replace("_", " ").strip().capitalize() or "Untitled"
+
+
+def _probe(path):
+    """(duration_seconds, thumbnail_path) for a video, cached by mtime."""
+    os.makedirs(THUMB_DIR, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    thumb = os.path.join(THUMB_DIR, stem + ".jpg")
+    meta_path = os.path.join(THUMB_DIR, stem + ".json")
+    mtime = os.path.getmtime(path)
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        if meta["mtime"] == mtime and os.path.exists(thumb):
+            return meta["duration"], thumb
+    except (OSError, ValueError, KeyError):
+        pass
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        import imageio_ffmpeg
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    out = subprocess.run([ffmpeg, "-y", "-ss", "1.2", "-i", path, "-frames:v", "1", "-vf",
+                          "scale=108:192:force_original_aspect_ratio=decrease,pad=108:192:(ow-iw)/2:(oh-ih)/2:color=black",
+                          thumb], capture_output=True, text=True)
+    m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", out.stderr)
+    duration = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3]) if m else 0
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump({"mtime": mtime, "duration": duration}, f)
+    return duration, thumb
+
+
+def recent_videos(limit=12):
+    paths = set(glob.glob(os.path.join(OUTPUT_DIR, "*.mp4")) + glob.glob(os.path.join(ROOT, "Output_*.mp4"))
+                + glob.glob(os.path.abspath("Output_*.mp4")))
+    videos = []
+    for path in sorted(paths, key=os.path.getmtime, reverse=True)[:limit]:
+        base = os.path.splitext(path)[0]
+        title, style = _prettify(os.path.basename(base)), None
+        try:
+            with open(base + ".storyboard.json", encoding="utf-8") as f:
+                board = json.load(f)
+            title, style = board.get("title", title), board.get("style")
+        except (OSError, ValueError):
+            pass
+        caption = None
+        if os.path.exists(base + ".caption.txt"):
+            with open(base + ".caption.txt", encoding="utf-8") as f:
+                caption = f.read().strip()
+        videos.append({"path": path, "title": title, "style": style, "caption": caption, "mtime": os.path.getmtime(path)})
+    return videos
+
+
+def refresh_reel():
+    def worker():
+        videos = recent_videos()
+        for v in videos:
+            try:
+                v["duration"], v["thumb"] = _probe(v["path"])
+            except Exception:
+                v["duration"], v["thumb"] = 0, None
+        ui(_draw_reel, videos)
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _draw_reel(videos):
+    for w in reel_list.winfo_children():
+        w.destroy()
+    if not videos:
+        ctk.CTkLabel(reel_list, text="Your finished videos will show up here.", font=T.font(T.MONO, 11),
+                     text_color=T.MUTED).pack(anchor="w", pady=6)
+        return
+    for v in videos:
+        row = ctk.CTkFrame(reel_list, fg_color="transparent", cursor="hand2")
+        row.pack(fill="x", pady=(0, 12))
+        if v.get("thumb") and os.path.exists(v["thumb"]):
+            img = ctk.CTkImage(Image.open(v["thumb"]), size=(54, 96))
+            art = ctk.CTkLabel(row, text="", image=img, width=54, height=96)
+        else:
+            art = ctk.CTkLabel(row, text="▶", width=54, height=96, fg_color=T.FIELD, text_color=T.MUTED, corner_radius=4)
+        art.pack(side="left", anchor="n")
+        info = ctk.CTkFrame(row, fg_color="transparent")
+        info.pack(side="left", fill="x", expand=True, padx=(12, 0), anchor="n")
+        title = ctk.CTkLabel(info, text=v["title"], font=T.font(T.SERIF, 16), text_color=T.INK, wraplength=210,
+                             justify="left", anchor="w")
+        title.pack(anchor="w")
+        meta = [f"{int(v['duration'])}s" if v.get("duration") else None, v["style"],
+                time.strftime("%b %d", time.localtime(v["mtime"]))]
+        ctk.CTkLabel(info, text="  ·  ".join(m for m in meta if m).upper(), font=T.font(T.MONO, 10),
+                     text_color=T.MUTED, anchor="w").pack(anchor="w", pady=(2, 2))
+        links = ctk.CTkFrame(info, fg_color="transparent")
+        links.pack(anchor="w")
+        link_button(links, "Play", lambda p=v["path"]: open_path(p), T.ACCENT, 11).pack(side="left")
+        if v["caption"]:
+            link_button(links, "Copy caption", lambda c=v["caption"]: copy_text(c, "Caption copied."), size=11).pack(side="left")
+        for w in (art, title):
+            w.bind("<Button-1>", lambda e, p=v["path"]: open_path(p))
+
+
+# ==========================================
+# LOG
+# ==========================================
+class RedirectText:
+    def __init__(self, stream, tag=None):
+        self.stream = stream
+        self.tag = tag
+
+    def write(self, string):
+        if self.stream:
+            self.stream.write(string)
+        try:
+            root.after(0, self._write, string)
+        except RuntimeError:
+            pass
+
+    def _write(self, string):
+        log_box.configure(state="normal")
+        log_box.insert("end", string, self.tag)
+        log_box.see("end")
+        log_box.configure(state="disabled")
+
+    def flush(self):
+        if self.stream:
+            self.stream.flush()
+
+
+def show_log(force=None):
+    visible = not log_box.winfo_ismapped() if force is None else force
+    # Floats over the bottom of the window instead of squeezing the form.
+    if visible:
+        log_box.place(in_=tape, x=0, y=-230, relwidth=1)
+        log_box.lift()
+    else:
+        log_box.place_forget()
+    log_btn.configure(text="Hide log ▾" if visible else "Show log ▴")
+
+
+def set_appearance(mode):
+    ctk.set_appearance_mode(mode.lower())
+    save_settings(appearance=mode.lower())
+    log_box.tag_config("error", foreground="#B3261E" if mode.lower() == "light" else "#FF8A80")
+
+
+def switch_mode(key):
+    for k, panel in panels.items():
+        panel.pack_forget()
+        btn = mode_buttons[k]
+        on = k == key
+        btn.configure(fg_color=T.SLATE_ACTIVE if on else "transparent")
+        btn.bar.configure(fg_color=T.ACCENT if on else "transparent")
+        btn.title_l.configure(text_color=T.SLATE_INK if on else T.SLATE_MUTED)
+    panel = panels[key]
+    kicker_l.configure(text=f"NO. {list(panels).index(key) + 1:02d}  —  {panel.kicker}")
+    title_l.configure(text=panel.title)
+    blurb_l.configure(text=panel.blurb)
+    panel.pack(fill="both", expand=True)
+    save_settings(mode=key)
+
 
 def detect_ai():
     name = describe_provider()
     print(f"[System] AI engine: {name}")
-    root.after(0, lambda: ai_label.config(text=f"AI: {name}", fg="#006400" if "Claude" in name else "#000080"))
+    ok = "Claude" in name or "Gemini" in name
+    ui(lambda: ai_status.configure(text=f"●  {name}", text_color=T.SLATE_GOOD if ok else T.SLATE_BAD))
 
+
+# ==========================================
+# WINDOW
+# ==========================================
+T.load_fonts()
+settings = load_settings()
+ctk.set_appearance_mode(settings.get("appearance", "dark"))
+
+root = ctk.CTk(fg_color=T.BG)
+root.title("ACE · Auto Content Engine")
+root.geometry("1360x880")
+root.minsize(1300, 820)
+root.grid_columnconfigure(1, weight=1)
+root.grid_rowconfigure(0, weight=1)
+
+# --- Sidebar (the slate) ---
+side = ctk.CTkFrame(root, fg_color=T.SLATE, corner_radius=0, width=230)
+side.grid(row=0, column=0, rowspan=2, sticky="nsw")
+side.pack_propagate(False)
+ctk.CTkLabel(side, text="ACE", font=T.font(T.SERIF, 54), text_color=T.SLATE_INK).pack(anchor="w", padx=26, pady=(26, 0))
+ctk.CTkLabel(side, text="AUTO CONTENT ENGINE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w", padx=28)
+ctk.CTkFrame(side, height=1, fg_color=("#3A352F", "#2A2723")).pack(fill="x", padx=26, pady=(22, 16))
+ctk.CTkLabel(side, text="MAKE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w", padx=28, pady=(0, 6))
+
+mode_buttons = {}
+for key, name, note in [("motion", "Motion graphics", "maps · line art · counters"),
+                        ("doc", "Documentary", "stock + AI images"),
+                        ("reddit", "Reddit story", "over gameplay")]:
+    btn = ctk.CTkFrame(side, fg_color="transparent", corner_radius=6, cursor="hand2")
+    btn.pack(fill="x", padx=14, pady=2)
+    btn.bar = ctk.CTkFrame(btn, width=3, height=40, fg_color="transparent", corner_radius=2)
+    btn.bar.pack(side="left", padx=(4, 10), pady=8)
+    text = ctk.CTkFrame(btn, fg_color="transparent")
+    text.pack(side="left", pady=8)
+    btn.title_l = ctk.CTkLabel(text, text=name, font=T.font(T.SANS, 15, "bold"), text_color=T.SLATE_MUTED, height=20, anchor="w")
+    btn.title_l.pack(anchor="w")
+    note_l = ctk.CTkLabel(text, text=note, font=T.font(T.MONO, 10), text_color=T.SLATE_MUTED, height=14, anchor="w")
+    note_l.pack(anchor="w")
+    for w in (btn, btn.bar, text, btn.title_l, note_l):
+        w.bind("<Button-1>", lambda e, k=key: switch_mode(k))
+    mode_buttons[key] = btn
+
+side_bottom = ctk.CTkFrame(side, fg_color="transparent")
+side_bottom.pack(side="bottom", fill="x", padx=26, pady=24)
+ctk.CTkLabel(side_bottom, text="ENGINE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w")
+ai_status = ctk.CTkLabel(side_bottom, text="●  detecting AI...", font=T.font(T.MONO, 11), text_color=T.SLATE_MUTED, anchor="w")
+ai_status.pack(anchor="w", pady=(4, 0))
+ctk.CTkLabel(side_bottom, text=f"●  Chatterbox {'ready' if chatterbox_available() else 'not installed'}",
+             font=T.font(T.MONO, 11), text_color=T.SLATE_GOOD if chatterbox_available() else T.SLATE_MUTED,
+             anchor="w").pack(anchor="w", pady=(2, 18))
+Choice(side_bottom, ["LIGHT", "DARK"], settings.get("appearance", "dark").upper(), set_appearance, size=11,
+       fg=T.SLATE, border=T.SLATE_ACTIVE, on=(T.SLATE_INK, T.SLATE), off=T.SLATE_MUTED, hover=T.SLATE_ACTIVE).pack(anchor="w")
+
+# --- Main column ---
+main = ctk.CTkFrame(root, fg_color="transparent")
+main.grid(row=0, column=1, sticky="nsew", padx=(44, 20), pady=(30, 0))
+kicker_l = ctk.CTkLabel(main, text="", font=T.font(T.MONO, 11, "bold"), text_color=T.ACCENT)
+kicker_l.pack(anchor="w")
+title_l = ctk.CTkLabel(main, text="", font=T.font(T.SERIF, 46), text_color=T.INK)
+title_l.pack(anchor="w", pady=(0, 0))
+blurb_l = ctk.CTkLabel(main, text="", font=T.font(T.SANS, 14), text_color=T.MUTED, wraplength=640, justify="left")
+blurb_l.pack(anchor="w", pady=(0, 24))
+panel_host = ctk.CTkFrame(main, fg_color="transparent")
+panel_host.pack(fill="both", expand=True)
+
+# --- Right rail ---
+rail = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0, width=360)
+rail.grid(row=0, column=2, sticky="nse")
+rail.pack_propagate(False)
+ctk.CTkFrame(rail, width=1, fg_color=T.RULE).pack(side="left", fill="y")
+rail_inner = ctk.CTkFrame(rail, fg_color="transparent")
+rail_inner.pack(side="left", fill="both", expand=True, padx=(22, 14), pady=(30, 0))
+
+reel_head = ctk.CTkFrame(rail_inner, fg_color="transparent")
+reel_head.pack(fill="x")
+ctk.CTkLabel(reel_head, text="The reel", font=T.font(T.SERIF, 26), text_color=T.INK).pack(side="left")
+link_button(reel_head, "open folder", lambda: open_path(OUTPUT_DIR if os.path.isdir(OUTPUT_DIR) else ROOT), size=11).pack(side="right")
+ctk.CTkFrame(rail_inner, height=1, fg_color=T.RULE).pack(fill="x", pady=(8, 12))
+reel_list = ctk.CTkScrollableFrame(rail_inner, fg_color="transparent", scrollbar_button_color=T.RULE,
+                                   scrollbar_button_hover_color=T.MUTED)
+reel_list.pack(fill="both", expand=True)
+
+shift = ctk.CTkFrame(rail_inner, fg_color="transparent")
+shift.pack(fill="x", pady=(12, 18))
+shift_head = ctk.CTkFrame(shift, fg_color="transparent")
+shift_head.pack(fill="x")
+ctk.CTkLabel(shift_head, text="Night shift", font=T.font(T.SERIF, 26), text_color=T.INK).pack(side="left")
+queue_count = ctk.CTkLabel(shift_head, text="00", font=T.font(T.MONO, 12, "bold"), text_color=T.ACCENT)
+queue_count.pack(side="left", padx=10, pady=(6, 0))
+link_button(shift_head, "clear", clear_queue, size=11).pack(side="right")
+ctk.CTkFrame(shift, height=1, fg_color=T.RULE).pack(fill="x", pady=(8, 10))
+queue_list = ctk.CTkFrame(shift, fg_color="transparent")
+queue_list.pack(fill="x")
+start_q_btn = ctk.CTkButton(shift, text="Start the night shift", command=start_batch, height=40,
+                            font=T.font(T.SANS, 13, "bold"), fg_color=T.INK, hover_color=T.MUTED, text_color=T.BG,
+                            text_color_disabled=T.BG, corner_radius=8)
+start_q_btn.pack(fill="x", pady=(12, 0))
+
+# --- Bottom tape: stages, progress, status, log ---
+tape = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0)
+tape.grid(row=1, column=1, columnspan=2, sticky="ew")
+ctk.CTkFrame(tape, height=1, fg_color=T.RULE).pack(fill="x")
+log_box = ctk.CTkTextbox(root, height=230, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
+                         border_color=T.RULE, corner_radius=0, wrap="word", state="disabled")
+tape_row = ctk.CTkFrame(tape, fg_color="transparent")
+tape_row.pack(fill="x", padx=28, pady=12)
+stage_frame = ctk.CTkFrame(tape_row, fg_color="transparent")
+stage_frame.pack(side="left")
+progress_bar = ctk.CTkProgressBar(tape_row, height=6, width=180, corner_radius=3, progress_color=T.ACCENT, fg_color=T.RULE)
+progress_bar.pack(side="left", padx=18)
+progress_bar.set(0)
+log_btn = link_button(tape_row, "Show log ▴", lambda: show_log(), size=11)
+log_btn.pack(side="right")
+result_actions = ctk.CTkFrame(tape_row, fg_color="transparent")
+play_btn = link_button(result_actions, "▶ Play", None, T.ACCENT, 12)
+play_btn.pack(side="left")
+caption_btn = link_button(result_actions, "Copy caption", None, size=12)
+status_label = ctk.CTkLabel(tape_row, text="Ready.", font=T.font(T.SANS, 13), text_color=T.INK, anchor="w")
+status_label.pack(side="left", fill="x", expand=True)
+
+panels = {"motion": MotionPanel(panel_host), "doc": DocPanel(panel_host), "reddit": RedditPanel(panel_host)}
+current_stages = STAGES["motion"]
+_paint_stages()
+set_appearance(settings.get("appearance", "dark"))
+switch_mode(settings.get("mode", "motion") if settings.get("mode") in panels else "motion")
+refresh_queue()
+refresh_reel()
+
+sys.stdout = RedirectText(sys.__stdout__)
+sys.stderr = RedirectText(sys.__stderr__, tag="error")
+print("ACE ready. Logs from every job land here.")
 threading.Thread(target=detect_ai, daemon=True).start()
-root.mainloop()

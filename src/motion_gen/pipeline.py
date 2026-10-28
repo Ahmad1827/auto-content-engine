@@ -28,7 +28,7 @@ def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, capt
         f.write(board["caption"] + "\n")
 
     props = {
-        "style": board["style"], "fps": 30, "width": 1080, "height": 1920, "captions": captions, "handle": handle,
+        "title": board["title"], "style": board["style"], "fps": 30, "width": 1080, "height": 1920, "captions": captions, "handle": handle,
         "voice": voice, "speed": speed, "scenes": board["scenes"],
     }
     video_path = _voice_and_render(props, base, log)

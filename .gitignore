@@ -50,3 +50,4 @@ motion/public/flags/
 motion/public/jobs/
 motion/out/
 tts_env/
+.ace_settings.json

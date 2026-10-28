@@ -47,12 +47,13 @@ Navigate to the project folder and activate the virtual environment:
     source wsl_env/bin/activate
     python3 run.py
 
-### 1-Click Viral Maker
-1. Select format (`9:16 Shorts` or `16:9 YouTube`).
-2. Select media type (`Documentary` or `Gameplay`).
-3. Click **Generate Random Trending Video**.
-4. Approve the global trend fetched via NewsAPI or Google Trends.
-5. The app will generate the script, voice, subtitles, and video automatically.
+### The app
+- **Sidebar:** pick what you're making: *Motion graphics*, *Documentary* or *Reddit story*. Only that mode's settings are shown.
+- **Surprise me** (Motion) asks the AI for a fresh history or religion topic, avoiding the ones you already made. **Trending** (Documentary) pulls trending topics.
+- **+ paste my own script instead** swaps the AI script for yours.
+- **The reel** (right) lists your finished videos with thumbnails: *Play* opens one, *Copy caption* copies its TikTok description.
+- **Night shift:** queue videos with *+ Add to night shift*, then start the shift and let it run overnight.
+- Light and dark themes (bottom left). The app remembers your last mode, style, voice and handle in `.ace_settings.json`.
 
 ---
 
@@ -66,11 +67,11 @@ Animated explainers drawn with code instead of stock images, with word-by-word c
 
 `Topic ➔ AI storyboard (scenes + visuals as JSON) ➔ Kokoro voice with word timings ➔ Remotion (React) render ➔ 1080x1920 MP4`
 
-**AI is detected automatically.** If Claude Code is installed and logged in (`claude` on PATH), the app uses it, running on your Claude subscription with no API key. Otherwise it falls back to `GEMINI_API_KEY`. The menu bar shows which one is active. Force one with `ACE_LLM=claude` or `ACE_LLM=gemini`, and pick a Claude model with `ACE_CLAUDE_MODEL=opus`.
+**AI is detected automatically.** If Claude Code is installed and logged in (`claude` on PATH), the app uses it, running on your Claude subscription with no API key. Otherwise it falls back to `GEMINI_API_KEY`. The sidebar shows which one is active. Force one with `ACE_LLM=claude` or `ACE_LLM=gemini`, and pick a Claude model with `ACE_CLAUDE_MODEL=opus`.
 
 **Requirements:** Node.js 20+. The first render installs the packages in `motion/` automatically.
 
-**GUI:** pick *✨ Motion Graphics (AI)* under Background Style and choose a style (Auto / Atlas / Ink). Works with AI Script, Manual Script, the queue and 1-Click Viral.
+**GUI:** choose *Motion graphics* in the sidebar, type a subject (or hit *Surprise me*), click a style card, pick a voice and a length.
 
 **CLI:**
 
