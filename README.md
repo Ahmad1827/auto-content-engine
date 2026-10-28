@@ -56,6 +56,32 @@ Navigate to the project folder and activate the virtual environment:
 
 ---
 
+## ✨ Motion Graphics Mode (AI animated TikToks)
+
+Animated explainers drawn with code instead of stock images, with word-by-word captions.
+
+**Styles:** Atlas (dark glowing history maps), Ink (warm line art), Parchment (old map on paper), Neon (synthwave, for mysteries and tech), Newspaper (1900s front page). On *Auto*, the AI picks the style that fits the topic. Styles are color and font tokens in `motion/src/theme.ts`.
+
+**Scene types the AI combines:** map (flags, arrows, country or region zoom), counter, title card, line-art illustration, with/without comparison, timeline, quote, versus (stats battle).
+
+`Topic ➔ AI storyboard (scenes + visuals as JSON) ➔ Kokoro voice with word timings ➔ Remotion (React) render ➔ 1080x1920 MP4`
+
+**AI is detected automatically.** If Claude Code is installed and logged in (`claude` on PATH), the app uses it, running on your Claude subscription with no API key. Otherwise it falls back to `GEMINI_API_KEY`. The menu bar shows which one is active. Force one with `ACE_LLM=claude` or `ACE_LLM=gemini`, and pick a Claude model with `ACE_CLAUDE_MODEL=opus`.
+
+**Requirements:** Node.js 20+. The first render installs the packages in `motion/` automatically.
+
+**GUI:** pick *✨ Motion Graphics (AI)* under Background Style and choose a style (Auto / Atlas / Ink). Works with AI Script, Manual Script, the queue and 1-Click Viral.
+
+**CLI:**
+
+    python make_motion.py "The Karboğazı ambush of 1920" --style atlas --handle @yourchannel
+
+Output goes to `output/`: the `.mp4`, a `.caption.txt` (TikTok description + hashtags) and a `.storyboard.json`. Edit the JSON (narration, headlines, map markers...) and re-render it with voice using `python make_motion.py --from-storyboard output/<name>.storyboard.json`. Add `--seconds 30` to a new video to change its target length. Preview and tweak the templates live with `cd motion && npm run studio`.
+
+Renders take ~3-5 min per minute of video on a 4-core CPU.
+
+---
+
 ## 🔧 Troubleshooting
 
 | Problem | Solution |

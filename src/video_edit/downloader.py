@@ -2,22 +2,20 @@ import os
 import requests
 import time
 from duckduckgo_search import DDGS
-from google import genai
+from llm.provider import active_provider, generate
 from dotenv import load_dotenv
 from BingImageCreator import ImageGen
 
 load_dotenv()
 
 def analyze_script_for_images(script_text, image_count, is_short):
-    api_key = os.getenv("GEMINI_API_KEY")
     ratio_instruction = "vertical (portrait, 9:16)" if is_short else "horizontal (landscape, 16:9)"
     
-    if not api_key:
-        print("[Downloader] WARNING: No Gemini API Key found. Using default queries.")
+    if not active_provider():
+        print("[Downloader] WARNING: No AI available. Using default queries.")
         return ["technology"] * image_count, ["cinematic digital art"] * image_count
     
-    print("[Downloader] Asking Gemini to generate image prompts...")
-    client = genai.Client(api_key=api_key)
+    print("[Downloader] Asking AI to generate image prompts...")
     prompt = (f"Read this script. Generate exactly {image_count} distinct search queries for real photos (prefix WEB:) "
               f"and {image_count} distinct AI image prompts (prefix AI:). "
               f"CRITICAL: All images must be suitable for a {ratio_instruction} video. "
@@ -25,15 +23,14 @@ def analyze_script_for_images(script_text, image_count, is_short):
     
     web_queries, ai_prompts = [], []
     try:
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        for line in response.text.split('\n'):
+        for line in generate(prompt).split('\n'):
             line = line.strip()
             if line.startswith("WEB:"):
                 web_queries.append(line.replace("WEB:", "").strip())
             elif line.startswith("AI:"):
                 ai_prompts.append(line.replace("AI:", "").strip() + f", cinematic, {ratio_instruction}")
     except Exception as e:
-        print(f"[Downloader] Gemini API Error: {e}")
+        print(f"[Downloader] AI Error: {e}")
     
     if not web_queries:
         web_queries = ["high tech background"] * image_count

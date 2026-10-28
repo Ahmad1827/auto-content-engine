@@ -21,6 +21,12 @@ except ImportError:
 
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
+from llm.provider import describe_provider
+from motion_gen.pipeline import make_motion_video
+from motion_gen.narration import CHATTERBOX_VOICES, chatterbox_available
+
+MOTION_STYLES = {"Auto (AI picks)": "auto", "Atlas (dark history maps)": "atlas", "Ink (line art)": "ink",
+                 "Parchment (old map)": "parchment", "Neon (mystery / tech)": "neon", "Newspaper (1900s events)": "newspaper"}
 
 BG_DESKTOP = "#008080"
 WIN_FACE = "#C0C0C0"
@@ -213,6 +219,35 @@ def process_gameplay_content(text_or_story, voice, is_short, topic="Video"):
 
 
 
+def process_motion(topic, style_label, voice, script=None):
+    """Motion-graphics TikTok: AI storyboard -> voice (Kokoro or Chatterbox) -> Remotion render.
+
+    Chatterbox voices only work here; the older pipelines fall back to Kokoro if one is selected."""
+    subject = f"Turn this script into the video, keeping its wording:\n{script}" if script else topic
+
+    def log(msg):
+        print(msg)
+        if msg.startswith("[Voice] Scene"):
+            update_progress(25)
+        elif msg.startswith("[Render] Rendered"):
+            try:
+                done, total = msg.split()[2].strip(",").split("/")
+                update_progress(40 + int(55 * int(done) / int(total)))
+            except (IndexError, ValueError):
+                pass
+
+    try:
+        update_progress(5)
+        root.after(0, lambda: status_label.config(text=f"Motion video: {topic[:50]}...", fg=WIN_TITLE))
+        result = make_motion_video(subject, style=MOTION_STYLES.get(style_label, "auto"), voice=voice, log=log)
+        update_progress(100)
+        if not BATCH_MODE:
+            root.after(0, lambda: messagebox.showinfo("Done", f"Saved to:\n{result['video']}\n\nCaption:\n{result['caption']}"))
+    except Exception as e:
+        print(f"[Error] Motion pipeline crashed: {e}", file=sys.stderr)
+    finally:
+        root.after(0, reset_buttons)
+
 def update_queue_ui():
     queue_listbox.delete(0, tk.END)
     for i, t in enumerate(batch_queue):
@@ -237,6 +272,7 @@ def add_to_queue():
         "scene_dur": entry_scene_duration.get(),
         "img_count": entry_img_count.get(),
         "voice": combo_voice.get(),
+        "motion_style": combo_motion_style.get(),
         "do_web": var_web_img.get(),
         "do_ai": var_ai_img.get()
     }
@@ -318,6 +354,10 @@ def batch_worker():
         bg_style = task["bg_style"]
         
         try:
+            if bg_style == "Motion" and source != "Reddit":
+                process_motion(topic, task.get("motion_style", "Auto (AI picks)"), task["voice"], script=task.get("manual_text"))
+                continue
+
             if source == "Reddit":
                 stories = get_reddit_stories(subreddit=topic, limit=1)
                 if stories:
@@ -336,9 +376,9 @@ def batch_worker():
                     process_content(script, task["custom_kw"], task["do_web"], task["do_ai"], is_short, str(task["scene_dur"]), str(task["img_count"]), task["voice"], topic)
                     
             else: 
-                script = get_script(topic, task["subtopics"], str(task["duration"]), "Gemini")
+                script = get_script(topic, task["subtopics"], str(task["duration"]))
                 if script.startswith(("Error:", "AI Error:")):
-                    print(f"[Night Shift Error] Gemini API failed: {script}", file=sys.stderr)
+                    print(f"[Night Shift Error] Script generation failed: {script}", file=sys.stderr)
                 else:
                     with open("generated_script.txt", "w", encoding="utf-8") as f:
                         f.write(script)
@@ -492,7 +532,9 @@ def on_generate(event=None):
             manual_window.destroy()
             print(f"[System] User provided manual script. Background Mode: {bg_style}")
             
-            if bg_style == "Gameplay":
+            if bg_style == "Motion":
+                threading.Thread(target=process_motion, args=(custom_kw or "Manual_Video", combo_motion_style.get(), voice, content), daemon=True).start()
+            elif bg_style == "Gameplay":
                 threading.Thread(target=process_gameplay_content, args=(content, voice, is_short, custom_kw or "Manual_Video"), daemon=True).start()
             else:
                 threading.Thread(target=process_content, args=(content, custom_kw, do_web, do_ai, is_short, sec_per_img_str, img_count_str, voice, "Manual_Video"), daemon=True).start()
@@ -506,13 +548,17 @@ def on_generate(event=None):
         reset_buttons()
         return
         
-    print(f"[Gemini] Writing script for topic: {topic}")
+    if bg_style == "Motion":
+        threading.Thread(target=process_motion, args=(topic, combo_motion_style.get(), voice), daemon=True).start()
+        return
+
+    print(f"[AI] Writing script for topic: {topic}")
     def pipeline():
         try:
             update_progress(5)
-            script = get_script(topic, entry_subtopics.get(), entry_minutes.get(), "Gemini")
+            script = get_script(topic, entry_subtopics.get(), entry_minutes.get())
             if script.startswith(("Error:", "AI Error:")):
-                print(f"[Error] Gemini failed: {script}", file=sys.stderr)
+                print(f"[Error] Script generation failed: {script}", file=sys.stderr)
                 root.after(0, lambda: reset_buttons())
                 return
             with open("generated_script.txt", "w", encoding="utf-8") as f:
@@ -544,11 +590,22 @@ def update_ui_visibility(*args):
         
         rb_bg_images.config(state="disabled")
         rb_bg_gameplay.config(state="disabled")
+        rb_bg_motion.config(state="disabled")
+        combo_motion_style.config(state="disabled")
         btn_generate.config(text="FETCH REDDIT STORIES")
     else:
         rb_bg_images.config(state="normal")
         rb_bg_gameplay.config(state="normal")
+        rb_bg_motion.config(state="normal")
         
+        combo_motion_style.config(state="readonly" if bg_style == "Motion" else "disabled")
+        if bg_style == "Motion":
+            # Motion videos are always 9:16 and ~1 minute; image settings don't apply.
+            for widget in [entry_custom_images, entry_img_count, entry_scene_duration, entry_subtopics, entry_minutes]:
+                widget.config(state="disabled", bg=WIN_FACE)
+            for widget in [check_web, check_ai]: widget.config(state="disabled")
+            btn_generate.config(text="PASTE SCRIPT & ANIMATE" if source == "Manual Script" else "AI GENERATE MOTION VIDEO")
+            return
         if bg_style == "Gameplay":
             
             for widget in [entry_custom_images, entry_img_count, entry_scene_duration]: widget.config(state="disabled", bg=WIN_FACE)
@@ -657,11 +714,15 @@ def execute_viral_pipeline(topic, format_choice, type_choice):
     is_short = (format_choice == "9:16 Shorts")
     voice = combo_voice.get() 
     
+    if type_choice == "Motion Graphics":
+        threading.Thread(target=process_motion, args=(topic, combo_motion_style.get(), voice), daemon=True).start()
+        return
+
     if type_choice == "Gameplay Video":
         def gameplay_pipeline():
             try:
                 update_progress(5)
-                script = get_script(topic, "Viral Storytelling style", "1", "Gemini")
+                script = get_script(topic, "Viral Storytelling style", "1")
                 
                 process_gameplay_content(script, voice, is_short, topic)
             except Exception as e: print(f"[Error] {e}", file=sys.stderr)
@@ -670,7 +731,7 @@ def execute_viral_pipeline(topic, format_choice, type_choice):
         def doc_pipeline():
             try:
                 update_progress(5)
-                script = get_script(topic, "Quick Documentary summary", "1", "Gemini")
+                script = get_script(topic, "Quick Documentary summary", "1")
                 with open("generated_script.txt", "w", encoding="utf-8") as f: f.write(script)
                 process_content(script, topic, True, True, is_short, "4", "8", voice, topic)
             except Exception as e: print(f"[Error] {e}", file=sys.stderr)
@@ -709,6 +770,8 @@ tk.Button(t_bar, text="X", font=("Arial", 8, "bold"), relief="raised", bd=2, bg=
 m_bar = tk.Frame(app_win, bg=WIN_FACE, relief="raised", bd=1)
 m_bar.pack(fill=tk.X)
 tk.Label(m_bar, text="File   Edit   View   Help", font=FONT_MAIN, bg=WIN_FACE, fg=TEXT_COLOR).pack(side=tk.LEFT, padx=5, pady=2)
+ai_label = tk.Label(m_bar, text="AI: detecting...", font=FONT_MAIN, bg=WIN_FACE, fg="#404040")
+ai_label.pack(side=tk.LEFT, padx=15)
 tk.Button(m_bar, text="[ REBOOT SYSTEM ]", font=FONT_BOLD, bg=WIN_FACE, fg="#800000", relief="raised", bd=2, command=hard_reset_app).pack(side=tk.RIGHT, padx=5, pady=2)
 
 main_content = tk.Frame(app_win, bg=WIN_FACE)
@@ -763,11 +826,14 @@ var_bg_style = tk.StringVar(value="Images")
 rb_bg_images = create_pixel_radio(col3, "🖼️ Images (Ken Burns)", var_bg_style, "Images", update_ui_visibility)
 rb_bg_images.pack(anchor="w")
 rb_bg_gameplay = create_pixel_radio(col3, "🎮 Gameplay Video", var_bg_style, "Gameplay", update_ui_visibility)
-rb_bg_gameplay.pack(anchor="w", pady=(0, 10))
+rb_bg_gameplay.pack(anchor="w")
+rb_bg_motion = create_pixel_radio(col3, "✨ Motion Graphics (AI)", var_bg_style, "Motion", update_ui_visibility)
+rb_bg_motion.pack(anchor="w")
+combo_motion_style = ttk.Combobox(col3, values=list(MOTION_STYLES.keys()), state="readonly", font=FONT_MAIN); combo_motion_style.set("Auto (AI picks)"); combo_motion_style.pack(fill=tk.X, pady=(2, 10))
 
 
 tk.Label(col3, text="Voice Actor:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
-combo_voice = ttk.Combobox(col3, values=list(VOICE_PRESETS.keys()), state="readonly", font=FONT_MAIN); combo_voice.set("🇺🇸 AM - Michael (Deep/News)"); combo_voice.pack(fill=tk.X, pady=(2, 15))
+combo_voice = ttk.Combobox(col3, values=(list(CHATTERBOX_VOICES) if chatterbox_available() else []) + list(VOICE_PRESETS.keys()), state="readonly", font=FONT_MAIN); combo_voice.set("🇺🇸 AM - Michael (Deep/News)"); combo_voice.pack(fill=tk.X, pady=(2, 15))
 
 tk.Label(col3, text="Image Settings:", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR).pack(anchor="w")
 var_web_img = tk.BooleanVar(value=True); var_ai_img = tk.BooleanVar(value=True)
@@ -804,6 +870,7 @@ create_pixel_radio(viral_frame, "16:9 YouTube", var_random_format, "16:9 YouTube
 var_random_type = tk.StringVar(value="Documentary (Images)")
 create_pixel_radio(viral_frame, "Documentary", var_random_type, "Documentary (Images)").pack(side=tk.LEFT, padx=10)
 create_pixel_radio(viral_frame, "Gameplay", var_random_type, "Gameplay Video").pack(side=tk.LEFT, padx=10)
+create_pixel_radio(viral_frame, "Motion", var_random_type, "Motion Graphics").pack(side=tk.LEFT, padx=10)
 btn_random_viral = tk.Button(viral_frame, text="1-CLICK VIRAL", font=FONT_BOLD, bg=WIN_FACE, fg=TEXT_COLOR, relief="raised", bd=2, cursor="hand2", pady=5, padx=20, command=on_random_viral)
 btn_random_viral.pack(side=tk.RIGHT)
 
@@ -840,4 +907,11 @@ status_label.pack(fill=tk.X)
 
 update_ui_visibility()
 root.bind('<Return>', on_generate)
+
+def detect_ai():
+    name = describe_provider()
+    print(f"[System] AI engine: {name}")
+    root.after(0, lambda: ai_label.config(text=f"AI: {name}", fg="#006400" if "Claude" in name else "#000080"))
+
+threading.Thread(target=detect_ai, daemon=True).start()
 root.mainloop()

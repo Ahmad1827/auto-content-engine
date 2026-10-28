@@ -43,3 +43,10 @@ generated_script.txt
 
 .vscode/
 .idea/
+# Motion engine (Remotion)
+output/
+motion/node_modules/
+motion/public/flags/
+motion/public/jobs/
+motion/out/
+tts_env/
