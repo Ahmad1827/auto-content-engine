@@ -1,95 +1,206 @@
-# Auto Content Engine Pro
+# ACE · Auto Content Engine
 
-Automated dual-format video generator with AI narration, intelligent asset fetching, and cinematic editing. Optimized for WSL (Ubuntu).
+Make TikToks, Shorts and YouTube videos from one line of text. Type a subject, for example *"the Dancing Plague of 1518"*, and ACE writes the script, records the voice, animates it and renders a finished MP4 with captions and a ready-to-post description.
 
-## ⚙️ Project Architecture
+It runs on your own computer. If you have **Claude Code** it uses your Claude subscription with no API key needed. The voices are free and run locally.
 
-Data processing pipeline:
-`Trends / NewsAPI ➔ Gemini (Script) ➔ Web Scrape / Bing Image Creator ➔ Kokoro TTS (Voice) ➔ FFmpeg (Edit) ➔ MoviePy (Final Render)`
+![ACE in dark mode](docs/app_dark_motion.png)
 
 ---
 
-## 🛠️ System Requirements & Setup
+## What it makes
 
-The **Kokoro-82M** model (~300MB) runs locally. This project is configured to run entirely inside **WSL2 (Ubuntu)**.
+| Mode | What you get |
+| :--- | :--- |
+| **Motion graphics** | Animated 9:16 explainers drawn with code: glowing maps with flags and arrows, line-art illustrations, counters, timelines, quotes and "versus" stat battles, with word-by-word captions. Made for history and religion content. |
+| **Documentary** | A narrated video over web and AI images (Ken Burns), with subtitles and a thumbnail. Vertical or horizontal, short or long. |
+| **Reddit story** | A top Reddit story read aloud over gameplay footage, with bold subtitles. |
 
-### 1. Install System Dependencies
-Open your Ubuntu terminal and install the required packages:
+### Motion graphics styles
+
+![Atlas, Ink, Parchment, Neon and Newspaper](docs/styles.jpg)
+
+**Atlas** (dark glowing maps) · **Ink** (warm line art) · **Parchment** (old map on paper) · **Neon** (synthwave, for mysteries and tech) · **Newspaper** (1900s front page). On **Auto**, the AI picks the style that fits the topic.
+
+The AI combines these scene types: map (country or region zoom, flags, markers, arrows), title card, counter, line-art illustration, with/without comparison, timeline, quote and versus.
+
+---
+
+## How it works
+
+```
+Motion graphics:  subject ➔ AI storyboard (scenes as JSON) ➔ voice + word timings ➔ Remotion (React) ➔ 1080x1920 MP4
+Documentary:      subject ➔ AI script ➔ web / AI images ➔ Kokoro voice ➔ subtitles ➔ MoviePy + FFmpeg ➔ MP4
+Reddit story:     subreddit ➔ top story ➔ Kokoro voice ➔ subtitles ➔ gameplay background ➔ MP4
+```
+
+**The AI is picked automatically:**
+1. **Claude Code**: if `claude` is installed and logged in, ACE runs it in headless mode on your subscription.
+2. **Gemini**: otherwise it uses `GEMINI_API_KEY` from `.env`.
+
+The app's sidebar shows which one is active.
+
+**Voices:**
+- **Kokoro**: fast, many accents, always installed.
+- **Chatterbox**: much more natural and still free. It is slower (about 10 seconds of work per second of speech on a CPU), so it suits overnight queues. Captions stay in sync because faster-whisper times each word.
+
+---
+
+## Setup
+
+Everything is tested on **WSL2 (Ubuntu) with Python 3.12**. A GPU is not needed.
+
+### 1. System packages
 
     sudo apt update
     sudo apt install ffmpeg espeak-ng python3.12-venv python3-pip
 
-### 2. API Key Configuration
-Create a file named `.env` in the root of the project.
+Motion graphics also need **Node.js 20+** (for example via [nvm](https://github.com/nvm-sh/nvm)). The first render installs the packages in `motion/` by itself.
 
-    GEMINI_API_KEY="your_google_ai_studio_key"
-    NEWS_API_KEY="your_newsapi_key"
-    EXPLODING_TOPICS_KEY=""
-    BING_COOKIE="your__U_cookie_value"
-    BING_SRCH_COOKIE="your_SRCHHPGUSR_cookie_value"
-    PEXELS_API_KEY="your_pexels_key_optional"
-
-### 3. Create Virtual Environment & Install Packages
-Navigate to your project folder inside WSL. The package installation will take a few minutes as it downloads PyTorch.
+### 2. Python environment
 
     python3 -m venv wsl_env
     source wsl_env/bin/activate
     pip install --upgrade pip
     pip install -r requirements.txt
-    pip install requests python-dotenv BingImageCreator pytrends
+    pip install BingImageCreator pytrends
+
+### 3. AI
+
+**Recommended:** install [Claude Code](https://claude.com/claude-code) and log in once with `claude`. Nothing else is needed.
+
+**Or** create a `.env` file in the project folder:
+
+    GEMINI_API_KEY="your_google_ai_studio_key"
+
+### 4. Optional extras
+
+Add these to `.env` if you use the documentary and trends features:
+
+    NEWS_API_KEY="your_newsapi_key"
+    EXPLODING_TOPICS_KEY=""
+    PEXELS_API_KEY="your_pexels_key"
+    BING_COOKIE="your__U_cookie_value"
+    BING_SRCH_COOKIE="your_SRCHHPGUSR_cookie_value"
+
+| What | Where |
+| :--- | :--- |
+| Gameplay background for Reddit videos | `assets/background.mp4` |
+| Background music for motion graphics (played quietly) | `assets/music/background.mp3` |
+
+### 5. Chatterbox voices (optional)
+
+Chatterbox needs its own PyTorch version, so it lives in a separate environment called `tts_env`. The app finds it automatically.
+
+    python3 -m venv tts_env
+    tts_env/bin/pip install chatterbox-tts faster-whisper soundfile
+
+The first use downloads the models (a few GB, one time only).
 
 ---
 
-## 🚀 Running the App
-
-Navigate to the project folder and activate the virtual environment:
+## Using the app
 
     source wsl_env/bin/activate
     python3 run.py
 
-### The app
-- **Sidebar:** pick what you're making: *Motion graphics*, *Documentary* or *Reddit story*. Only that mode's settings are shown.
-- **Surprise me** (Motion) asks the AI for a fresh history or religion topic, avoiding the ones you already made. **Trending** (Documentary) pulls trending topics.
-- **+ paste my own script instead** swaps the AI script for yours.
-- **The reel** (right) lists your finished videos with thumbnails: *Play* opens one, *Copy caption* copies its TikTok description.
-- **Night shift:** queue videos with *+ Add to night shift*, then start the shift and let it run overnight.
-- Light and dark themes (bottom left). The app remembers your last mode, style, voice and handle in `.ace_settings.json`.
+![ACE in light mode](docs/app_light_doc.png)
+
+- **Sidebar:** pick *Motion graphics*, *Documentary* or *Reddit story*. Only that mode's settings are shown.
+- **Subject:** type a topic, or:
+  - press **Surprise me** to get a fresh history or religion idea from the AI. It skips topics you've already made.
+  - press **Trending** (Documentary mode) to choose from trending topics.
+  - press **+ paste my own script instead** to use your own words.
+- **Look:** click a style card. **Voice:** Chatterbox voices are listed first when they're installed. **Runtime:** target length from 20 to 90 seconds, captions on or off, and your `@handle` shown on the video.
+- **The reel** on the right lists your finished videos with thumbnails. *Play* opens one; *Copy caption* copies its description and hashtags.
+- **Night shift:** press *+ Add to night shift* on as many videos as you like, then press *Start the night shift* and let it run overnight.
+- The bottom bar shows each step (Script → Voice → Render) and the log on demand. Switch between light and dark at the bottom left.
+
+The app remembers your mode, style, voice, length and handle in `.ace_settings.json`.
 
 ---
 
-## ✨ Motion Graphics Mode (AI animated TikToks)
+## Command line
 
-Animated explainers drawn with code instead of stock images, with word-by-word captions.
+    python make_motion.py "The Karboğazı ambush of 1920" --style atlas --seconds 60 --voice chatterbox --handle @yourchannel
 
-**Styles:** Atlas (dark glowing history maps), Ink (warm line art), Parchment (old map on paper), Neon (synthwave, for mysteries and tech), Newspaper (1900s front page). On *Auto*, the AI picks the style that fits the topic. Styles are color and font tokens in `motion/src/theme.ts`.
+| Flag | Meaning |
+| :--- | :--- |
+| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper` |
+| `--seconds` | Target length (default 55) |
+| `--voice` | A Kokoro preset name, or `chatterbox` |
+| `--speed` | Kokoro speaking speed (default 1.1) |
+| `--handle` | Shown at the bottom of the video |
+| `--no-captions` | Turns off the word-by-word captions |
+| `--from-storyboard` | Re-voices and re-renders a saved `.storyboard.json` |
 
-**Scene types the AI combines:** map (flags, arrows, country or region zoom), counter, title card, line-art illustration, with/without comparison, timeline, quote, versus (stats battle).
+Every motion video writes three files to `output/`:
+- `<name>.mp4`: the video
+- `<name>.caption.txt`: the TikTok description and hashtags
+- `<name>.storyboard.json`: every scene, ready to edit. Fix the narration, a headline or a map marker, then run `--from-storyboard` to render it again.
 
-`Topic ➔ AI storyboard (scenes + visuals as JSON) ➔ Kokoro voice with word timings ➔ Remotion (React) render ➔ 1080x1920 MP4`
-
-**AI is detected automatically.** If Claude Code is installed and logged in (`claude` on PATH), the app uses it, running on your Claude subscription with no API key. Otherwise it falls back to `GEMINI_API_KEY`. The sidebar shows which one is active. Force one with `ACE_LLM=claude` or `ACE_LLM=gemini`, and pick a Claude model with `ACE_CLAUDE_MODEL=opus`.
-
-**Requirements:** Node.js 20+. The first render installs the packages in `motion/` automatically.
-
-**GUI:** choose *Motion graphics* in the sidebar, type a subject (or hit *Surprise me*), click a style card, pick a voice and a length.
-
-**CLI:**
-
-    python make_motion.py "The Karboğazı ambush of 1920" --style atlas --handle @yourchannel
-
-Output goes to `output/`: the `.mp4`, a `.caption.txt` (TikTok description + hashtags) and a `.storyboard.json`. Edit the JSON (narration, headlines, map markers...) and re-render it with voice using `python make_motion.py --from-storyboard output/<name>.storyboard.json`. Add `--seconds 30` to a new video to change its target length. Preview and tweak the templates live with `cd motion && npm run studio`.
-
-Renders take ~3-5 min per minute of video on a 4-core CPU.
+To preview and tweak the templates live, run `cd motion && npm run studio`.
 
 ---
 
-## 🔧 Troubleshooting
+## Settings
+
+| Variable | Effect |
+| :--- | :--- |
+| `ACE_LLM` | Force `claude` or `gemini` instead of auto-detecting |
+| `ACE_CLAUDE_MODEL` | Claude model for Claude Code, e.g. `opus` |
+| `ACE_GEMINI_MODEL` | Gemini model (default `gemini-2.5-flash`) |
+
+---
+
+## Project layout
+
+```
+run.py                  start the app
+make_motion.py          motion graphics from the command line
+src/gui/                the app (CustomTkinter) and its theme
+src/llm/provider.py     Claude Code / Gemini auto-detection
+src/motion_gen/         storyboard, voices (Kokoro + Chatterbox worker), render
+src/script_gen/         documentary scripts
+src/video_edit/         image fetching, Ken Burns editing, thumbnails
+src/voice_gen/          Kokoro narration and subtitles
+src/shorts_gen/         Reddit stories over gameplay
+src/trend_finder/       trending topics
+motion/                 Remotion project: scenes, themes, captions (React + TypeScript)
+assets/fonts, assets/ui bundled fonts (OFL) and style previews
+output/                 finished motion videos (not in git)
+```
+
+---
+
+## Speed
+
+All timings are on a 4-core CPU without a GPU.
+
+| Step | Time |
+| :--- | :--- |
+| Storyboard (Claude Code) | ~1 min |
+| Kokoro voice, 60 s video | ~30 s |
+| Chatterbox voice, 60 s video | ~9 min |
+| Render, 60 s video | ~2–3 min |
+
+---
+
+## Troubleshooting
 
 | Problem | Solution |
 | :--- | :--- |
-| **numpy/torch build failed** | Ensure you are using Python 3.12 inside WSL. |
-| **espeak-ng / ffmpeg not found** | Run `sudo apt install ffmpeg espeak-ng` in your Ubuntu terminal. |
-| **Exec format error (VS Code)** | WSL interop is off. Edit `/etc/wsl.conf`, add `[interop] enabled=true appendWindowsPath=true`, save, and run `wsl --shutdown` in Windows PowerShell. |
-| **Reddit pipeline failed: 'body'** | Ensure the generated AI script is passed as a dictionary containing `title`, `selftext`, and `body` keys before sending to the Reddit processor. |
-| **Bing AI Failed: Redirect failed** | Your Bing cookies (`_U` and `SRCHHPGUSR`) expired. Grab new ones from your browser (Developer Tools -> Application -> Cookies) and update `.env`. |
-| **Gemini 503 UNAVAILABLE** | Google servers are overloaded. Wait 30-60 seconds and click generate again. |
+| **Sidebar says "No AI found"** | Run `claude` once and log in, or add `GEMINI_API_KEY` to `.env`. |
+| **"Chatterbox not installed"** | Create `tts_env` (see Setup step 5). |
+| **Motion render fails on first run** | Check that `node --version` is 20 or newer. The first render runs `npm install` in `motion/`. |
+| **numpy/torch build failed** | Use Python 3.12 inside WSL. |
+| **espeak-ng / ffmpeg not found** | `sudo apt install ffmpeg espeak-ng` |
+| **Exec format error (VS Code)** | WSL interop is off. Edit `/etc/wsl.conf` and add `[interop] enabled=true appendWindowsPath=true`, then run `wsl --shutdown` in PowerShell. |
+| **Bing AI failed: redirect failed** | Your Bing cookies (`_U`, `SRCHHPGUSR`) expired. Copy new ones from your browser's dev tools into `.env`. |
+| **Gemini 503 UNAVAILABLE** | Google's servers are busy. Wait a minute and try again. |
+
+---
+
+## Credits
+
+[Remotion](https://www.remotion.dev) · [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) · [Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI, MIT) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) · [Natural Earth](https://www.naturalearthdata.com) via world-atlas · [flag-icons](https://github.com/lipis/flag-icons) · DM Serif Display and IBM Plex (SIL Open Font License)
