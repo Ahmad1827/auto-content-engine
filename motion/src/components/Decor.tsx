@@ -9,6 +9,7 @@ export const Decor: React.FC = () => {
   if (t.decor === 'ornate') return <Ornate />;
   if (t.decor === 'synth') return <Synth />;
   if (t.decor === 'press') return <Masthead />;
+  if (t.decor === 'pixel') return <PixelFrame />;
   return null;
 };
 
@@ -109,5 +110,32 @@ const Masthead: React.FC = () => {
       <div style={{position: 'absolute', top: 130, bottom: 40, left: 36, width: 1.5, background: t.text, opacity: 0.35}} />
       <div style={{position: 'absolute', top: 130, bottom: 40, right: 36, width: 1.5, background: t.text, opacity: 0.35}} />
     </AbsoluteFill>
+  );
+};
+
+// Pixel: a chunky stepped frame and slow-rising dust motes.
+const PixelFrame: React.FC = () => {
+  const t = useTheme();
+  const frame = useCurrentFrame();
+  return (
+    <svg width={1080} height={1920} style={{position: 'absolute', inset: 0}} shapeRendering="crispEdges">
+      <g fill={t.border} opacity={0.9}>
+        {[[30, 30], [1032, 30], [30, 1872], [1032, 1872]].map(([x, y], i) => (
+          <g key={i}>
+            <rect x={x} y={y} width={18} height={18} />
+            <rect x={x + (x < 540 ? 18 : -18)} y={y} width={18} height={18} opacity={0.55} />
+            <rect x={x} y={y + (y < 960 ? 18 : -18)} width={18} height={18} opacity={0.55} />
+          </g>
+        ))}
+      </g>
+      {Array.from({length: 14}, (_, i) => {
+        const r = (k: number) => {
+          const x = Math.sin((i + k) * 91.7 + 17.3) * 43758.5453;
+          return x - Math.floor(x);
+        };
+        const y = 1900 - ((frame * (0.6 + r(1)) + r(2) * 1900) % 1900);
+        return <rect key={i} x={Math.floor((r(3) * 1080) / 6) * 6} y={Math.floor(y / 6) * 6} width={6} height={6} fill={t.accent} opacity={0.35} />;
+      })}
+    </svg>
   );
 };

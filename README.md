@@ -18,11 +18,13 @@ It runs on your own computer. If you have **Claude Code** it uses your Claude su
 
 ### Motion graphics styles
 
-![Atlas, Ink, Parchment, Neon and Newspaper](docs/styles.jpg)
+![Atlas, Ink, Parchment, Neon, Newspaper, Pixel and Diorama](docs/styles.jpg)
 
-**Atlas** (dark glowing maps) · **Ink** (warm line art) · **Parchment** (old map on paper) · **Neon** (synthwave, for mysteries and tech) · **Newspaper** (1900s front page). On **Auto**, the AI picks the style that fits the topic.
+**Atlas** (dark glowing maps) · **Ink** (hand-drawn cartoon people) · **Parchment** (old map on paper) · **Neon** (synthwave, for mysteries and tech) · **Newspaper** (1900s front page) · **Pixel** (8-bit pixel-art people) · **Diorama** (low-poly 3D people in little 3D sets). On **Auto**, the AI picks the style that fits the topic.
 
-The AI combines these scene types: map (country or region zoom, flags, markers, arrows), title card, counter, line-art illustration, with/without comparison, timeline, quote and versus.
+The AI combines these scene types: cast (people acting out the moment in a set: they wave, walk, sit, sleep, pray, point, fight and more, dressed for their time and place), map (country or region zoom, flags, markers, arrows), title card, counter, line-art illustration, with/without comparison, timeline, quote and versus.
+
+Diorama renders in real 3D, so it is the slowest style: about 14 minutes for a 60-second video on a CPU.
 
 ---
 
@@ -126,7 +128,7 @@ The app remembers your mode, style, voice, length and handle in `.ace_settings.j
 
 | Flag | Meaning |
 | :--- | :--- |
-| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper` |
+| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama` |
 | `--seconds` | Target length (default 55) |
 | `--voice` | A Kokoro preset name, or `chatterbox` |
 | `--speed` | Kokoro speaking speed (default 1.1) |

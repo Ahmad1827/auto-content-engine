@@ -1,7 +1,7 @@
 // Storyboard contract shared with the Python pipeline (src/motion_gen/).
 // All times are in seconds from the start of the video.
 
-export type StyleName = 'atlas' | 'ink' | 'parchment' | 'neon' | 'newspaper';
+export type StyleName = 'atlas' | 'ink' | 'parchment' | 'neon' | 'newspaper' | 'pixel' | 'diorama';
 
 export type Word = {text: string; start: number; end: number};
 
@@ -15,11 +15,35 @@ export type MapArrow = {from: [number, number]; to: [number, number]; label?: st
 
 export type VersusSide = {name: string; flag?: string};
 
-export type Panel = {svg: string; label?: string; tag?: string};
+// A character the AI casts: everything is picked from fixed options, the engine draws them.
+export type Skin = 'light' | 'tan' | 'brown' | 'dark';
+export type Hair = 'short' | 'long' | 'curly' | 'bun' | 'bald' | 'hijab' | 'turban' | 'cap' | 'helmet' | 'crown';
+export type Outfit = 'casual' | 'robe' | 'suit' | 'dress' | 'armor' | 'uniform';
+export type Pose = 'stand' | 'wave' | 'walk' | 'run' | 'sit' | 'sleep' | 'pray' | 'point' | 'think' | 'cheer' | 'phone' | 'sad' | 'fight' | 'kneel';
+export type Person = {
+  pose: Pose;
+  skin?: Skin;
+  hair?: Hair;
+  hairColor?: 'black' | 'brown' | 'blonde' | 'red' | 'grey' | 'white';
+  outfit?: Outfit;
+  // Main clothing colour; trousers are picked to go with it.
+  color?: 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'white' | 'black' | 'brown' | 'grey' | 'orange' | 'pink' | 'teal';
+  beard?: boolean;
+  mood?: 'happy' | 'neutral' | 'sad' | 'angry' | 'surprised';
+  label?: string;
+  // Horizontal place on stage, -1 (left) .. 1 (right); spread evenly when omitted.
+  x?: number;
+};
+export type Setting = 'bedroom' | 'house' | 'street' | 'desert' | 'mosque' | 'battlefield' | 'office' | 'night' | 'field' | 'classroom' | 'empty';
+export type Prop = 'bed' | 'table' | 'chair' | 'phone' | 'clock' | 'book' | 'lamp' | 'tree' | 'door' | 'window' | 'moon' | 'sun' | 'fire' | 'sword' | 'mat' | 'tent' | 'car';
+export type Cast = {setting: Setting; people: Person[]; props?: Prop[]};
+
+export type Panel = {svg?: string; cast?: Cast; label?: string; tag?: string};
 
 export type Visual =
   | {type: 'map'; focus: string[]; highlight?: string[]; zoom?: 'country' | 'region'; markers?: MapMarker[]; arrows?: MapArrow[]}
   | {type: 'illustration'; svg: string; label?: string}
+  | ({type: 'cast'; label?: string} & Cast)
   | {type: 'compare'; top: Panel; bottom: Panel}
   | {type: 'counter'; value: number; prefix?: string; suffix?: string; label?: string}
   | {type: 'title'; text: string; sub?: string}

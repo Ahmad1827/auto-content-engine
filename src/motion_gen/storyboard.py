@@ -4,7 +4,7 @@ from llm.provider import generate
 STYLES = {
     "atlas": "dark cartographic history: glowing country outlines on a dark map, flags, campaign arrows, "
              "huge condensed headlines with red accents. Best for history, wars, empires, geography.",
-    "ink": "hand-drawn on near black: wobbly marker-pen headlines, stick figures, rooms and objects sketched stroke by stroke, "
+    "ink": "hand-drawn on near black: wobbly marker-pen headlines, cartoon people in little scenes (bedroom, street, mosque...), "
            "'with vs without' comparisons, orange highlights. Best for religion, habits, psychology, life lessons.",
     "parchment": "an old map on aged paper: sepia ink, oxblood red accents, classic serif type. "
                  "Best for ancient and medieval history, empires, kings, legends, the Bible and early Islam.",
@@ -12,6 +12,10 @@ STYLES = {
             "Best for mysteries, unsolved cases, space, technology, the Cold War, conspiracies.",
     "newspaper": "front page of an old newspaper: black ink on newsprint, halftone dots, red stamp, typewriter labels. "
                  "Best for 1850-1980 events: disasters, crimes, heists, scandals, assassinations, famous headlines.",
+    "pixel": "8-bit pixel art on a deep violet night: pixel people acting out the story, glowing type. "
+             "Best for 'between you and X' facts, internet-culture history, games, science and surprising timelines.",
+    "diorama": "low-poly 3D people in small 3D sets (a house, a bedroom, a desert, a mosque, a battlefield) with soft light and elegant serif titles. "
+               "Best for relatable life stories, family, habits, faith in daily life, 'what happens when' and slice-of-life history.",
 }
 
 SYSTEM = """You are the writer and art director of a faceless TikTok channel that makes 45-60 second animated explainers.
@@ -41,11 +45,23 @@ Scene visual types (field `visual.type`):
 - "counter": a big number counting up. `value` (number), optional `prefix`/`suffix` ("~", "%", "K"), `label` underneath.
 - "title": big text card. `text` (use *asterisks* for accent words), optional `sub`.
 - "illustration": one line-art drawing in `svg`, optional `label` tag.
-- "compare": two stacked drawings: `top` and `bottom`, each {{svg, tag, label}} — e.g. tag "WITH TAHAJJUD" / "WITHOUT", label "LIVELY · GOOD-HEARTED".
+- "compare": two stacked panels: `top` and `bottom`, each {{svg or cast, tag, label}} — e.g. tag "WITH TAHAJJUD" / "WITHOUT", label "LIVELY · GOOD-HEARTED".
+  A panel can hold a line drawing (`svg`) or people (`cast`, same fields as the cast scene); prefer `cast` when people are the point.
 - "timeline": 3-5 `events` [{{date, label}}] shown on a vertical line; `active` = index of the event this scene is about.
   Dates short ("MAY 29", "1453", "DAY 3"), labels under 30 characters. Good for sieges, reigns, countdowns, "how it unfolded".
 - "quote": `text` = a real quote (max 30 words) and `source` = who said or wrote it. Only quotes you are confident are authentic;
   add "attributed" to the source if authorship is uncertain. Good for scripture, famous last words, speeches.
+- "cast": people acting out the moment in a small set; the engine draws them (cartoon, pixel or 3D depending on style).
+  `setting`: bedroom, house, street, desert, mosque, battlefield, office, night, field, classroom or empty.
+  `people`: 1-4 of {{pose, skin, hair, hairColor, outfit, color, beard, mood, label}}:
+    pose: stand, wave, walk, run, sit, sleep, pray, point, think, cheer, phone, sad, fight, kneel
+    skin: light, tan, brown, dark · hair: short, long, curly, bun, bald, hijab, turban, cap, helmet, crown
+    hairColor: black, brown, blonde, red, grey, white · outfit: casual, robe, suit, dress, armor, uniform
+    color (clothes): red, blue, green, yellow, purple, white, black, brown, grey, orange, pink, teal
+    mood: happy, neutral, sad, angry, surprised · beard: true/false · label: short name tag ("YOU", "CAESAR")
+  `props` (optional): bed, table, chair, phone, clock, book, lamp, tree, door, window, moon, sun, fire, sword, mat, tent, car.
+  Dress people for their time and place (robes and turbans in 7th-century Arabia, armor and helmets for soldiers, suits for 1970s officials).
+  `label` (optional) is a caption line under the scene.
 - "versus": a stats battle. `left` and `right` = {{name, flag}} (flag = ISO alpha-3, optional), `rows` = 2-4 [{{label, left, right}}]
   with short values like "~80,000", "69", "3 DAYS". Numeric values get proportional bars. Good for army sizes, empires, rivals.
 
@@ -53,7 +69,7 @@ SVG rules for "illustration" and "compare":
 - Full <svg> element. viewBox="0 0 1000 1000" for illustration, viewBox="0 0 1000 520" for compare panels.
 - Line art only: path/line/polyline/circle/ellipse/rect/polygon. Do NOT set fill, stroke, colors or styles; the engine styles everything.
   Optional classes: class="accent" (glowing accent stroke for the key detail), class="solid" (filled shape), class="warm" (glowing sunrise fill for windows, lamps, the sun).
-- Minimal and readable on a phone: stick figures (head circle r 35-45, line body, bent limbs show emotion), a few furniture/scene objects, a floor line.
+- Minimal and readable on a phone: objects, rooms, symbols, a floor line. For people, use a "cast" scene or cast panels instead of drawing stick figures.
   15-45 elements. Elements are drawn in document order, so put the floor and room first and the person and accent details last.
 - No <text>, <style>, <script>, gradients, images or transforms beyond simple ones.
 
@@ -62,16 +78,50 @@ Also return `title` (short, for the file name) and `caption` (TikTok description
 
 LEAN = {
     "atlas": "Lean on maps (change focus, markers and arrows as the story moves), with a versus, timeline or counter for the big facts.",
-    "ink": "Lean on illustrations and compare panels, with a quote, counter or title card where a key phrase or number lands.",
+    "ink": "Lean on cast scenes and compare panels with cast, illustrations for objects, and a quote, counter or title card where a key phrase or number lands.",
     "parchment": "Lean on maps and timelines, with a quote or versus where it fits; illustrations work as old engravings.",
     "neon": "Lean on counters, timelines, versus and illustrations; maps for where it happened.",
     "newspaper": "Lean on timelines, quotes (real headlines or statements), counters and maps; illustrations as front-page sketches.",
+    "pixel": "Lean on cast scenes (people acting it out) and compare panels with cast, with counters, timelines and title cards for the big facts. Avoid svg illustrations.",
+    "diorama": "Lean on cast scenes (most scenes), with counters, quotes and title cards between them. Do not use svg illustrations or svg panels; use cast instead.",
+}
+
+POSES = ["stand", "wave", "walk", "run", "sit", "sleep", "pray", "point", "think", "cheer", "phone", "sad", "fight", "kneel"]
+SETTINGS = ["bedroom", "house", "street", "desert", "mosque", "battlefield", "office", "night", "field", "classroom", "empty"]
+PROPS = ["bed", "table", "chair", "phone", "clock", "book", "lamp", "tree", "door", "window", "moon", "sun", "fire", "sword", "mat", "tent", "car"]
+PERSON_CHOICES = {
+    "skin": ["light", "tan", "brown", "dark"],
+    "hair": ["short", "long", "curly", "bun", "bald", "hijab", "turban", "cap", "helmet", "crown"],
+    "hairColor": ["black", "brown", "blonde", "red", "grey", "white"],
+    "outfit": ["casual", "robe", "suit", "dress", "armor", "uniform"],
+    "color": ["red", "blue", "green", "yellow", "purple", "white", "black", "brown", "grey", "orange", "pink", "teal"],
+    "mood": ["happy", "neutral", "sad", "angry", "surprised"],
+}
+
+_PERSON = {
+    "type": "object",
+    "properties": {
+        "pose": {"type": "string", "enum": POSES},
+        **{k: {"type": "string", "enum": v} for k, v in PERSON_CHOICES.items()},
+        "beard": {"type": "boolean"},
+        "label": {"type": "string"},
+    },
+    "required": ["pose"],
+}
+
+_CAST = {
+    "type": "object",
+    "properties": {
+        "setting": {"type": "string", "enum": SETTINGS},
+        "people": {"type": "array", "items": _PERSON},
+        "props": {"type": "array", "items": {"type": "string", "enum": PROPS}},
+    },
+    "required": ["setting", "people"],
 }
 
 _PANEL = {
     "type": "object",
-    "properties": {"svg": {"type": "string"}, "tag": {"type": "string"}, "label": {"type": "string"}},
-    "required": ["svg"],
+    "properties": {"svg": {"type": "string"}, "cast": _CAST, "tag": {"type": "string"}, "label": {"type": "string"}},
 }
 
 _SIDE = {
@@ -116,7 +166,10 @@ SCHEMA = {
                         "type": "object",
                         "properties": {
                             "type": {"type": "string", "enum": ["map", "counter", "title", "illustration", "compare",
-                                                                "timeline", "quote", "versus"]},
+                                                                "timeline", "quote", "versus", "cast"]},
+                            "setting": {"type": "string", "enum": SETTINGS},
+                            "people": {"type": "array", "items": _PERSON},
+                            "props": {"type": "array", "items": {"type": "string", "enum": PROPS}},
                             "focus": {"type": "array", "items": {"type": "string"}},
                             "zoom": {"type": "string", "enum": ["country", "region"]},
                             "highlight": {"type": "array", "items": {"type": "string"}},
@@ -184,8 +237,45 @@ SCHEMA = {
 }
 
 
+def _cast(c):
+    """Keeps only known choices so a stray value never reaches the renderer; None if nobody is left."""
+    if not isinstance(c, dict):
+        return None
+    people = []
+    for p in (c.get("people") or [])[:4]:
+        if not isinstance(p, dict):
+            continue
+        person = {"pose": p.get("pose") if p.get("pose") in POSES else "stand"}
+        person.update({k: p[k] for k, options in PERSON_CHOICES.items() if p.get(k) in options})
+        if p.get("beard") is True:
+            person["beard"] = True
+        if p.get("label"):
+            person["label"] = str(p["label"])[:18]
+        people.append(person)
+    if not people:
+        return None
+    return {"setting": c.get("setting") if c.get("setting") in SETTINGS else "empty", "people": people,
+            "props": [x for x in c.get("props") or [] if x in PROPS]}
+
+
+def _panel(p):
+    if not isinstance(p, dict):
+        return None
+    panel = {"tag": p.get("tag", ""), "label": p.get("label", "")}
+    cast = _cast(p.get("cast"))
+    if cast:
+        return dict(panel, cast=cast)
+    if p.get("svg"):
+        return dict(panel, svg=p["svg"])
+    return None
+
+
 def _visual(v):
     kind = v.get("type")
+    if kind == "cast":
+        cast = _cast(v)
+        if cast:
+            return dict(cast, type="cast", label=v.get("label", ""))
     if kind == "map":
         return {
             "type": "map",
@@ -202,8 +292,8 @@ def _visual(v):
                 "label": v.get("label", "")}
     if kind == "illustration" and v.get("svg"):
         return {"type": "illustration", "svg": v["svg"], "label": v.get("label", "")}
-    if kind == "compare" and v.get("top") and v.get("bottom"):
-        return {"type": "compare", "top": v["top"], "bottom": v["bottom"]}
+    if kind == "compare" and _panel(v.get("top")) and _panel(v.get("bottom")):
+        return {"type": "compare", "top": _panel(v["top"]), "bottom": _panel(v["bottom"])}
     if kind == "timeline" and v.get("events"):
         events = v["events"][:5]
         active = v.get("active")

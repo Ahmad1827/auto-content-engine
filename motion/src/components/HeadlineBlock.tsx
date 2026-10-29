@@ -21,7 +21,7 @@ export const HeadlineBlock: React.FC<{headline: Headline; top?: number}> = ({hea
   const bannerDelay = lineDelay(headline.lines.length) + 4;
 
   return (
-    <div style={{position: 'absolute', left: 72, right: 72, top, display: 'flex', flexDirection: 'column', alignItems: 'flex-start'}}>
+    <div style={{position: 'absolute', left: 72, right: 72, top, display: 'flex', flexDirection: 'column', alignItems: t.align === 'center' ? 'center' : 'flex-start', textAlign: t.align}}>
       {headline.lines.map((line, i) => {
         const s = spring({frame: frame - lineDelay(i), fps, config: {damping: 13, stiffness: 190}});
         const base = line.accent ? t.accent : t.text;
@@ -33,7 +33,7 @@ export const HeadlineBlock: React.FC<{headline: Headline; top?: number}> = ({hea
               fontSize: fitDisplay(t, line.text, SIZES[line.size ?? 'l']),
               letterSpacing: 1, opacity: s,
               transform: `translateY(${(1 - s) * 50}px) scale(${1 + (1 - s) * 0.18})`,
-              transformOrigin: 'left center',
+              transformOrigin: t.align === 'center' ? 'center' : 'left center',
               textShadow: t.shadow,
             }}
           >
@@ -69,10 +69,10 @@ const Banner: React.FC<{text: string; frame: number}> = ({text, frame}) => {
     fontSize: fitDisplay(t, text, 84, 880), color: t.onAccent, whiteSpace: 'nowrap',
   };
   const springIn = (config: object) => spring({frame, fps, config});
-  return <div style={{...base, ...bannerStyle(t, frame, springIn)}}>{text}</div>;
+  return <div style={{...base, ...bannerStyle(t, frame, springIn, text)}}>{text}</div>;
 };
 
-function bannerStyle(t: Theme, frame: number, springIn: (config: object) => number): React.CSSProperties {
+function bannerStyle(t: Theme, frame: number, springIn: (config: object) => number, text: string): React.CSSProperties {
   switch (t.banner) {
     case 'tape': {
       const s = springIn({damping: 12, stiffness: 170});
@@ -97,6 +97,24 @@ function bannerStyle(t: Theme, frame: number, springIn: (config: object) => numb
         padding: '10px 26px 6px', color: t.accent, border: `4px solid ${t.accent}`, borderRadius: 10, opacity: on,
         boxShadow: `0 0 26px ${t.accent}, inset 0 0 18px ${t.accent}88`, textShadow: `0 0 18px ${t.accent}`,
         background: 'rgba(7,6,26,0.55)',
+      };
+    }
+    case 'pixel': {
+      // Blocky label with stepped corners that types itself in, 3 frames per step.
+      const steps = Math.max(0, Math.min(1, Math.floor(frame / 3) / 4));
+      const notch = 'polygon(0 8px, 8px 8px, 8px 0, calc(100% - 8px) 0, calc(100% - 8px) 8px, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 8px calc(100% - 8px), 0 calc(100% - 8px))';
+      return {
+        padding: '12px 30px 8px', background: t.accent, clipPath: notch, opacity: steps > 0 ? 1 : 0,
+        transform: `scaleX(${steps})`, filter: 'drop-shadow(6px 6px 0 rgba(0,0,0,0.5))',
+      };
+    }
+    case 'pill': {
+      const s = springIn({damping: 200, stiffness: 90});
+      return {
+        marginTop: 26, padding: '14px 34px 12px', borderRadius: 999, color: t.accent, fontFamily: t.fonts.body, fontWeight: 600,
+        fontSize: Math.min(40, 880 / Math.max(1, text.length * 0.62)), letterSpacing: 6, textTransform: 'uppercase',
+        background: 'rgba(20,16,12,0.45)', border: `2px solid ${t.accent}66`, backdropFilter: 'blur(10px)',
+        opacity: s, transform: `translateY(${(1 - s) * 24}px)`,
       };
     }
     case 'stamp': {

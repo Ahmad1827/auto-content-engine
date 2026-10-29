@@ -1,4 +1,5 @@
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {CastView} from '../cast/CastView';
 import {LineArt} from '../components/LineArt';
 import {fitDisplay, useTheme} from '../theme';
 import type {Panel, Visual} from '../types';
@@ -32,9 +33,15 @@ const Frame: React.FC<{panel: Panel; top: number; height: number; delay: number;
         opacity: enter, transform: `translateY(${(1 - enter) * 30}px)`,
       }}
     >
-      <div style={{position: 'absolute', inset: '40px 40px 50px'}}>
-        <LineArt svg={panel.svg} delay={delay + 4} drawSeconds={1.8} />
-      </div>
+      {panel.cast ? (
+        <div style={{position: 'absolute', inset: 0, borderRadius: 16, overflow: 'hidden'}}>
+          <CastView cast={panel.cast} W={932} H={height - 4} mode="panel" delay={delay} />
+        </div>
+      ) : (
+        <div style={{position: 'absolute', inset: '40px 40px 50px'}}>
+          <LineArt svg={panel.svg ?? ''} delay={delay + 4} drawSeconds={1.8} />
+        </div>
+      )}
       {panel.tag && <Tag text={panel.tag} accent={accentTag} style={{top: -22, right: 28}} />}
       {panel.label && <Tag text={panel.label} accent={accentTag} style={{bottom: -22, left: 28}} />}
     </div>

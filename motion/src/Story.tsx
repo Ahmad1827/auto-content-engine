@@ -5,6 +5,7 @@ import {Decor} from './components/Decor';
 import {HeadlineBlock} from './components/HeadlineBlock';
 import {Kicker} from './components/Kicker';
 import {CompareScene, CounterScene, IllustrationScene, TitleScene} from './scenes/ArtScenes';
+import {CastScene} from './scenes/CastScene';
 import {QuoteScene, TimelineScene, VersusScene} from './scenes/InfoScenes';
 import {MapScene} from './scenes/MapScene';
 import {THEMES, ThemeContext, useTheme} from './theme';
@@ -20,11 +21,13 @@ const SceneBody: React.FC<{scene: Scene; durationInFrames: number}> = ({scene, d
   const push = interpolate(frame, [0, 8], [1.03, 1], {extrapolateRight: 'clamp'});
   const v = scene.visual;
   // Text-only scenes put the headline higher so it doesn't float under an empty top half.
-  const headlineTop = v.type === 'map' ? 1010 : v.type === 'title' ? 1000 : 1080;
+  // Cast scenes fill the frame with people, so their headline goes at the top.
+  const headlineTop = v.type === 'cast' ? 230 : v.type === 'map' ? 1010 : v.type === 'title' ? 1000 : 1080;
 
   return (
     <AbsoluteFill style={{opacity: Math.min(fadeIn, fadeOut), transform: `scale(${push})`}}>
       {v.type === 'map' && <MapScene visual={v} durationInFrames={durationInFrames} />}
+      {v.type === 'cast' && <CastScene visual={v} />}
       {v.type === 'illustration' && <IllustrationScene visual={v} compact={Boolean(scene.headline)} />}
       {v.type === 'compare' && <CompareScene visual={v} />}
       {v.type === 'counter' && <CounterScene visual={v} />}

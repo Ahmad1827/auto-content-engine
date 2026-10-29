@@ -17,7 +17,7 @@ def main():
     parser = argparse.ArgumentParser(description="Make an animated TikTok from a topic.")
     parser.add_argument("topic", nargs="?")
     parser.add_argument("--from-storyboard", help="Re-render a saved .storyboard.json instead of writing a new one")
-    parser.add_argument("--style", choices=["auto", "atlas", "ink", "parchment", "neon", "newspaper"], default="auto")
+    parser.add_argument("--style", choices=["auto", "atlas", "ink", "parchment", "neon", "newspaper", "pixel", "diorama"], default="auto")
     parser.add_argument("--voice", default=DEFAULT_PRESET,
                         help="A Kokoro preset (voice_gen/kokoro_narration.py), a Chatterbox voice (motion_gen/narration.py), or 'chatterbox'")
     parser.add_argument("--speed", type=float, default=1.1)

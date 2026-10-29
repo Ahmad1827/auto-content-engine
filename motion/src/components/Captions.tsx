@@ -40,7 +40,7 @@ export const Captions: React.FC<{words: Word[]; hidden?: [number, number][]}> = 
   return (
     <div
       style={{
-        position: 'absolute', left: 72, right: 150, top: 1430,
+        position: 'absolute', left: 72, right: t.align === 'center' ? 72 : 150, top: 1430, textAlign: t.align,
         fontFamily: t.fonts.body, fontWeight: t.bodyWeight, fontSize: 56, lineHeight: 1.22,
         textShadow: t.shadow === 'none' ? 'none' : '0 3px 18px rgba(0,0,0,0.85)',
       }}

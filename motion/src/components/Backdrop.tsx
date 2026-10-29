@@ -48,6 +48,25 @@ export const Backdrop: React.FC = () => {
           <AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.6) 100%)'}} />
         </>
       )}
+      {t.texture === 'pixel' && (
+        <>
+          <AbsoluteFill style={{background: `radial-gradient(ellipse at 50% 70%, ${t.accent}22 0%, transparent 55%)`}} />
+          <PixelStars frame={frame} color={t.line} />
+          {/* Ordered-dither shading toward the corners, in square 6px dots. */}
+          <AbsoluteFill style={{
+            backgroundImage: 'linear-gradient(45deg, rgba(0,0,0,0.35) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.35) 75%), linear-gradient(45deg, rgba(0,0,0,0.35) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.35) 75%)',
+            backgroundSize: '12px 12px', backgroundPosition: '0 0, 6px 6px',
+            WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, transparent 55%, black 100%)',
+          }} />
+        </>
+      )}
+      {t.texture === 'soft' && (
+        <>
+          <AbsoluteFill style={{background: 'linear-gradient(180deg, #2b2219 0%, #1c1712 55%, #120e0b 100%)'}} />
+          <AbsoluteFill style={{background: `radial-gradient(ellipse at 50% 30%, ${t.accent}1c 0%, transparent 55%)`}} />
+          <Noise opacity={0.05} blend="screen" frequency={0.85} />
+        </>
+      )}
       {t.texture === 'grain' && (
         <>
           <AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 38%, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)'}} />
@@ -120,3 +139,18 @@ const SynthFloor: React.FC<{frame: number; line: string; accent: string; bg: str
     </svg>
   );
 };
+
+// Square pixel stars that blink on and off in steps.
+const PixelStars: React.FC<{frame: number; color: string}> = ({frame, color}) => (
+  <svg width={1080} height={1920} style={{position: 'absolute', inset: 0}} shapeRendering="crispEdges">
+    {Array.from({length: 40}, (_, i) => {
+      const r = (k: number) => {
+        const x = Math.sin((i + k) * 127.1 + 311.7) * 43758.5453;
+        return x - Math.floor(x);
+      };
+      const on = Math.floor(frame / 8 + r(3) * 10) % 5 !== 0;
+      const size = r(5) > 0.8 ? 9 : 6;
+      return <rect key={i} x={Math.floor((r(1) * 1080) / 6) * 6} y={Math.floor((r(2) * 1300) / 6) * 6} width={size} height={size} fill={color} opacity={on ? 0.25 + r(4) * 0.5 : 0.08} />;
+    })}
+  </svg>
+);
