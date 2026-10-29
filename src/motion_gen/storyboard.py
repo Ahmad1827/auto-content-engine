@@ -4,7 +4,7 @@ from llm.provider import generate
 STYLES = {
     "atlas": "dark cartographic history: glowing country outlines on a dark map, flags, campaign arrows, "
              "huge condensed headlines with red accents. Best for history, wars, empires, geography.",
-    "ink": "minimal warm line-art on near black: stick figures, rooms, objects drawn stroke by stroke, "
+    "ink": "hand-drawn on near black: wobbly marker-pen headlines, stick figures, rooms and objects sketched stroke by stroke, "
            "'with vs without' comparisons, orange highlights. Best for religion, habits, psychology, life lessons.",
     "parchment": "an old map on aged paper: sepia ink, oxblood red accents, classic serif type. "
                  "Best for ancient and medieval history, empires, kings, legends, the Bible and early Islam.",

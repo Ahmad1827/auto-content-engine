@@ -20,6 +20,9 @@ export const LineArt: React.FC<{svg: string; drawSeconds?: number; delay?: numbe
   const {fps} = useVideoConfig();
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => sanitizeSvg(svg), [svg]);
+  // A stable id per drawing so stacked panels don't share (and fight over) one filter.
+  const filterId = useMemo(() => `ace-ink-${Math.abs([...svg].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7))}`, [svg]);
+  const seed = t.boil ? Math.floor(frame / 4) % 6 : 1;
   const progress = interpolate(frame - delay, [0, drawSeconds * fps], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
 
   useLayoutEffect(() => {
@@ -47,7 +50,8 @@ export const LineArt: React.FC<{svg: string; drawSeconds?: number; delay?: numbe
     <div ref={ref} style={{width: '100%', height: '100%'}}>
       <style>{`
         .lineart svg { width: 100%; height: 100%; overflow: visible; }
-        .lineart svg :is(${GEOMETRY}) { fill: none; stroke: ${t.line}; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+        .lineart svg :is(${GEOMETRY}) { fill: none; stroke: ${t.line}; stroke-width: ${t.lineWidth}; stroke-linecap: round; stroke-linejoin: round;
+          ${t.glow > 1.2 ? `filter: drop-shadow(0 0 ${4 * t.glow}px ${t.line});` : ''} }
         .lineart svg .accent { stroke: ${t.accent}; filter: drop-shadow(0 0 ${8 * t.glow}px ${t.accent}); }
         .lineart svg .solid { fill: ${t.line}; stroke: none; }
         .lineart svg .warm { fill: url(#ace-warm); stroke: none; filter: drop-shadow(0 0 ${30 * t.glow}px ${t.accent}88); }
@@ -60,9 +64,14 @@ export const LineArt: React.FC<{svg: string; drawSeconds?: number; delay?: numbe
             <stop offset="45%" stopColor={t.accent} />
             <stop offset="100%" stopColor={t.bg} />
           </radialGradient>
+          {/* Hand-inked lines: displace strokes with low-frequency noise; a changing seed makes them boil. */}
+          <filter id={filterId} x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed={seed} result="n" />
+            <feDisplacementMap in="SourceGraphic" in2="n" scale={t.wobble} xChannelSelector="R" yChannelSelector="G" />
+          </filter>
         </defs>
       </svg>
-      <div className="lineart" style={{width: '100%', height: '100%'}} dangerouslySetInnerHTML={{__html: html}} />
+      <div className="lineart" style={{width: '100%', height: '100%', filter: t.wobble ? `url(#${filterId})` : undefined}} dangerouslySetInnerHTML={{__html: html}} />
     </div>
   );
 };

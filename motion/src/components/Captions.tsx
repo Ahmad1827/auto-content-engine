@@ -41,7 +41,7 @@ export const Captions: React.FC<{words: Word[]; hidden?: [number, number][]}> = 
     <div
       style={{
         position: 'absolute', left: 72, right: 150, top: 1430,
-        fontFamily: t.fonts.body, fontWeight: 600, fontSize: 56, lineHeight: 1.22,
+        fontFamily: t.fonts.body, fontWeight: t.bodyWeight, fontSize: 56, lineHeight: 1.22,
         textShadow: t.shadow === 'none' ? 'none' : '0 3px 18px rgba(0,0,0,0.85)',
       }}
     >

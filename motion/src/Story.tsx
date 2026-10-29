@@ -1,6 +1,7 @@
 import {AbsoluteFill, Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Backdrop} from './components/Backdrop';
 import {Captions} from './components/Captions';
+import {Decor} from './components/Decor';
 import {HeadlineBlock} from './components/HeadlineBlock';
 import {Kicker} from './components/Kicker';
 import {CompareScene, CounterScene, IllustrationScene, TitleScene} from './scenes/ArtScenes';
@@ -63,6 +64,7 @@ export const Story: React.FC<Storyboard> = (props) => {
             </Sequence>
           );
         })}
+        <Decor />
         {props.captions && (
           <Captions
             words={props.words}
