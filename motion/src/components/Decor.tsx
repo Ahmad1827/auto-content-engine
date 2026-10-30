@@ -40,7 +40,7 @@ const Hud: React.FC = () => {
       <div style={{position: 'absolute', top: 68, right: 74, display: 'flex', alignItems: 'center', gap: 12,
         fontFamily: t.fonts.mono, fontWeight: 500, fontSize: 22, letterSpacing: 3, color: t.muted}}>
         <span style={{width: 12, height: 12, borderRadius: 6, background: t.accent, opacity: frame % 30 < 18 ? 1 : 0.15}} />
-        REEL {pad(Math.floor(s / 60))}:{pad(s % 60)}:{pad(frame % fps)}
+        {t.language === 'en' && 'REEL '}{pad(Math.floor(s / 60))}:{pad(s % 60)}:{pad(frame % fps)}
       </div>
     </AbsoluteFill>
   );
@@ -95,14 +95,15 @@ const Synth: React.FC = () => {
 // Newspaper: a front-page masthead across the top and column rules down the sides.
 const Masthead: React.FC = () => {
   const t = useTheme();
+  const english = t.language === 'en';
   const small = {fontFamily: t.fonts.mono, fontSize: 20, letterSpacing: 3, color: t.muted} as const;
   return (
     <AbsoluteFill>
       <div style={{position: 'absolute', top: 44, left: 56, right: 56}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'}}>
-          <span style={small}>LATE EDITION</span>
-          <span style={{fontFamily: t.fonts.body, fontWeight: 700, fontSize: 30, letterSpacing: 6, color: t.text}}>★ EXTRA ★</span>
-          <span style={small}>ONE CENT</span>
+          <span style={small}>{english && 'LATE EDITION'}</span>
+          <span style={{fontFamily: t.fonts.body, fontWeight: 700, fontSize: 30, letterSpacing: 6, color: t.text}}>{english ? '★ EXTRA ★' : '★ ★ ★'}</span>
+          <span style={small}>{english && 'ONE CENT'}</span>
         </div>
         <div style={{height: 5, background: t.text, marginTop: 10}} />
         <div style={{height: 1.5, background: t.text, marginTop: 4}} />

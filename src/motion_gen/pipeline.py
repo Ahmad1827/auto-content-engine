@@ -4,7 +4,7 @@ import os
 import re
 
 from llm.provider import describe_provider
-from motion_gen.narration import DEFAULT_PRESET, WORDS_PER_SECOND, engine_for, voice_scenes
+from motion_gen.narration import DEFAULT_PRESET, voice_language, voice_scenes, words_per_second
 from motion_gen.render import ROOT, render
 from motion_gen.storyboard import make_storyboard
 
@@ -13,13 +13,14 @@ MUSIC_PATH = os.path.join(ROOT, "assets", "music", "background.mp3")
 
 
 def _slug(text):
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:60] or "video"
+    return re.sub(r"\W+", "_", text.lower()).strip("_")[:60] or "video"
 
 
 def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, captions=True, handle="", seconds=55, log=print):
     log(f"[Motion] AI: {describe_provider()}")
     log(f"[Motion] Writing storyboard for: {topic}")
-    board = make_storyboard(topic, style, seconds, WORDS_PER_SECOND[engine_for(voice)])
+    language = voice_language(voice)
+    board = make_storyboard(topic, style, seconds, words_per_second(voice), language)
     log(f"[Motion] '{board['title']}' - {len(board['scenes'])} scenes, style {board['style']}")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -29,7 +30,7 @@ def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, capt
 
     props = {
         "title": board["title"], "style": board["style"], "fps": 30, "width": 1080, "height": 1920, "captions": captions, "handle": handle,
-        "voice": voice, "speed": speed, "scenes": board["scenes"],
+        "voice": voice, "speed": speed, "language": language, "scenes": board["scenes"],
     }
     video_path = _voice_and_render(props, base, log)
     log(f"[Motion] Caption: {board['caption']}")

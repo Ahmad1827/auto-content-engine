@@ -2,6 +2,8 @@ import os
 import re
 import numpy as np
 
+from voice_gen.edge_narration import EDGE_VOICES, generate_edge_voice
+
 VOICE_PRESETS = {
     "🇺🇸 AF - Heart (Warm/Default)": {"voice": "af_heart", "speed": 0.90, "lang": "a", "pause": 0.4},
     "🇺🇸 AF - Bella (Energetic)": {"voice": "af_bella", "speed": 0.95, "lang": "a", "pause": 0.35},
@@ -95,6 +97,8 @@ def generate_voice(text, output_path="video_final.wav", preset="🇺🇸 AF - He
     from kokoro import KPipeline
 
     text = clean_script_text(text)
+    if preset in EDGE_VOICES:
+        return generate_edge_voice(text, output_path, preset)
 
     p = VOICE_PRESETS.get(preset, VOICE_PRESETS["🇺🇸 AF - Heart (Warm/Default)"])
     v = voice or p["voice"]

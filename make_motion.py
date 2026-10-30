@@ -1,6 +1,7 @@
 """Command-line motion video maker.
 
     python make_motion.py "The Karboğazı ambush, 1920" --style atlas
+    python make_motion.py "The fall of Constantinople" --language ro
     python make_motion.py --from-storyboard output/<name>.storyboard.json   # re-render after editing
 """
 import argparse
@@ -11,6 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 from motion_gen.narration import CHATTERBOX_VOICES, DEFAULT_PRESET
 from motion_gen.pipeline import make_motion_video, rerender_storyboard
+from voice_gen.edge_narration import LANGUAGES, voice_language
 
 
 def main():
@@ -18,8 +20,10 @@ def main():
     parser.add_argument("topic", nargs="?")
     parser.add_argument("--from-storyboard", help="Re-render a saved .storyboard.json instead of writing a new one")
     parser.add_argument("--style", choices=["auto", "atlas", "ink", "parchment", "neon", "newspaper", "pixel", "diorama"], default="auto")
-    parser.add_argument("--voice", default=DEFAULT_PRESET,
-                        help="A Kokoro preset (voice_gen/kokoro_narration.py), a Chatterbox voice (motion_gen/narration.py), or 'chatterbox'")
+    parser.add_argument("--language", choices=list(LANGUAGES), help="Language of the video; picks that language's first voice")
+    parser.add_argument("--voice",
+                        help="A Kokoro preset (voice_gen/kokoro_narration.py), a Chatterbox voice (motion_gen/narration.py), "
+                             "an Edge voice (voice_gen/edge_narration.py), or 'chatterbox'")
     parser.add_argument("--speed", type=float, default=1.1)
     parser.add_argument("--handle", default="", help="e.g. @yourchannel, shown at the bottom")
     parser.add_argument("--no-captions", action="store_true")
@@ -32,6 +36,10 @@ def main():
         parser.error("give a topic or --from-storyboard")
     if args.voice == "chatterbox":
         args.voice = next(iter(CHATTERBOX_VOICES))
+    if not args.voice:
+        args.voice = next(iter(LANGUAGES[args.language or "en"]["voices"]), DEFAULT_PRESET)
+    elif args.language and voice_language(args.voice) != args.language:
+        parser.error(f"--voice speaks {LANGUAGES[voice_language(args.voice)]['name']}, not {LANGUAGES[args.language]['name']}")
     make_motion_video(args.topic, style=args.style, voice=args.voice, speed=args.speed,
                       captions=not args.no_captions, handle=args.handle, seconds=args.seconds)
 

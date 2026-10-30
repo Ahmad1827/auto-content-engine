@@ -1,24 +1,38 @@
 import os
 import glob
+import subprocess
 from PIL import Image, ImageDraw, ImageFont
 from google import genai
 from dotenv import load_dotenv
+from voice_gen.edge_narration import LANGUAGES
 
 load_dotenv()
 
-def create_thumbnail(topic_hint, output_path="thumbnail.jpg"):
+LATIN_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+def _load_font(language, size):
+    """DejaVu covers Latin, Cyrillic and Arabic; other alphabets take whatever system font fontconfig has for them."""
+    path = LATIN_FONT
+    if language in ("hi", "ja", "ko", "zh"):
+        path = subprocess.run(["fc-match", "-f", "%{file}", f":lang={language}:bold"], capture_output=True, text=True).stdout or LATIN_FONT
+    try:
+        return ImageFont.truetype(path, size)
+    except IOError:
+        return ImageFont.load_default()
+
+def create_thumbnail(topic_hint, output_path="thumbnail.jpg", language="en"):
     print("[Thumbnail] Generating clickbait title...")
     api_key = os.getenv("GEMINI_API_KEY")
     
     
     try:
         client = genai.Client(api_key=api_key)
-        prompt = f"Write a 3 or 4 word viral, clickbait YouTube thumbnail title for a video about '{topic_hint}'. Only output the title in ALL CAPS. No quotes, no punctuation."
+        prompt = f"Write a 3 or 4 word viral, clickbait YouTube thumbnail title in {LANGUAGES[language]['name']} for a video about '{topic_hint}'. Only output the title in ALL CAPS. No quotes, no punctuation."
         response = client.models.generate_content(model="gemini-3-flash", contents=prompt)
         title_text = response.text.strip().upper()
     except Exception as e:
         print(f"[Thumbnail] Gemini error: {e}")
-        title_text = "SHOCKING TRUTH"
+        title_text = "SHOCKING TRUTH" if language == "en" else topic_hint.upper()
 
     
     pool_dir = "assets/curated_pool"
@@ -52,11 +66,12 @@ def create_thumbnail(topic_hint, output_path="thumbnail.jpg"):
 
     
     draw = ImageDraw.Draw(img)
-    try:
-        
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 160)
-    except IOError:
-        font = ImageFont.load_default()
+    size = 160
+    font = _load_font(language, size)
+    # Other languages can run longer than the 3-4 English words this was sized for.
+    while size > 40 and draw.textlength(title_text, font=font) > 1800:
+        size -= 10
+        font = _load_font(language, size)
 
     
     bbox = draw.textbbox((0, 0), title_text, font=font)

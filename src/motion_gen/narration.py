@@ -1,4 +1,4 @@
-"""Voices each storyboard scene (Kokoro or Chatterbox) and returns word-level timings."""
+"""Voices each storyboard scene (Kokoro, Chatterbox or Edge) and returns word-level timings."""
 import json
 import os
 import shutil
@@ -7,6 +7,7 @@ import tempfile
 
 import numpy as np
 
+from voice_gen.edge_narration import EDGE_VOICES, LANGUAGES, synthesize, voice_language
 from voice_gen.kokoro_narration import VOICE_PRESETS, clean_script_text
 
 SAMPLE_RATE = 24000
@@ -28,7 +29,12 @@ WORDS_PER_SECOND = {"kokoro": 2.2, "chatterbox": 2.9}
 
 
 def engine_for(preset):
-    return "chatterbox" if preset in CHATTERBOX_VOICES else "kokoro"
+    return "edge" if preset in EDGE_VOICES else "chatterbox" if preset in CHATTERBOX_VOICES else "kokoro"
+
+
+def words_per_second(preset):
+    engine = engine_for(preset)
+    return LANGUAGES[voice_language(preset)]["wps"] if engine == "edge" else WORDS_PER_SECOND[engine]
 
 
 def chatterbox_available():
@@ -102,12 +108,20 @@ def _chatterbox_clips(texts, preset, log):
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _edge_clips(texts, preset, speed, log):
+    for i, text in enumerate(texts):
+        log(f"[Voice] Scene {i + 1}/{len(texts)}: {text[:60]}")
+        yield synthesize(text, EDGE_VOICES[preset]["voice"], speed)
+
+
 def voice_scenes(scenes, wav_path, preset=DEFAULT_PRESET, speed=1.1, log=print):
     """Fills scene["start"]/["duration"] in place, writes one WAV, returns the word list."""
     import soundfile as sf
 
     texts = [clean_script_text(s["narration"]) for s in scenes]
-    clips = _chatterbox_clips(texts, preset, log) if engine_for(preset) == "chatterbox" else _kokoro_clips(texts, preset, speed, log)
+    engine = engine_for(preset)
+    clips = (_edge_clips(texts, preset, speed, log) if engine == "edge" else
+             _chatterbox_clips(texts, preset, log) if engine == "chatterbox" else _kokoro_clips(texts, preset, speed, log))
     gap = np.zeros(int(SAMPLE_RATE * SCENE_GAP), dtype=np.float32)
 
     audio, words, cursor = [], [], 0.0

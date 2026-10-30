@@ -2,7 +2,7 @@
 
 Make TikToks, Shorts and YouTube videos from one line of text. Type a subject, for example *"the Dancing Plague of 1518"*, and ACE writes the script, records the voice, animates it and renders a finished MP4 with captions and a ready-to-post description.
 
-It runs on your own computer. If you have **Claude Code** it uses your Claude subscription with no API key needed. The voices are free and run locally.
+It runs on your own computer. If you have **Claude Code** it uses your Claude subscription with no API key needed. The English voices are free and run locally; other languages use free online voices.
 
 ![ACE in dark mode](docs/app_dark_motion.png)
 
@@ -45,6 +45,9 @@ The app's sidebar shows which one is active.
 **Voices:**
 - **Kokoro**: fast, many accents, always installed.
 - **Chatterbox**: much more natural and still free. It is slower (about 10 seconds of work per second of speech on a CPU), so it suits overnight queues. Captions stay in sync because faster-whisper times each word.
+- **Edge**: Microsoft's neural voices through `edge-tts`, for every language other than English. Free and fast, but they need internet while recording.
+
+**Languages:** English, Arabic, Chinese, Dutch, French, German, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Romanian, Russian, Spanish, Turkish and Ukrainian. Motion and Documentary videos are written, voiced and captioned in the language you pick, and Arabic videos are laid out right to left. Kokoro and Chatterbox stay English-only, and Reddit stories are read in English as posted.
 
 ---
 
@@ -90,7 +93,13 @@ Add these to `.env` if you use the documentary and trends features:
 | Gameplay background for Reddit videos | `assets/background.mp4` |
 | Background music for motion graphics (played quietly) | `assets/music/background.mp3` |
 
-### 5. Chatterbox voices (optional)
+### 5. Fonts for other alphabets (optional)
+
+Motion videos fetch their own fonts. Documentary subtitles and thumbnails use your system's fonts, so in Hindi, Korean or Chinese they need these:
+
+    sudo apt install fonts-noto-core fonts-noto-cjk
+
+### 6. Chatterbox voices (optional)
 
 Chatterbox needs its own PyTorch version, so it lives in a separate environment called `tts_env`. The app finds it automatically.
 
@@ -113,7 +122,7 @@ The first use downloads the models (a few GB, one time only).
   - press **Surprise me** to get a fresh history or religion idea from the AI. It skips topics you've already made.
   - press **Trending** (Documentary mode) to choose from trending topics.
   - press **+ paste my own script instead** to use your own words.
-- **Look:** click a style card. **Voice:** Chatterbox voices are listed first when they're installed. **Runtime:** target length from 20 to 90 seconds, captions on or off, and your `@handle` shown on the video.
+- **Look:** click a style card. **Voice:** pick a language, then a voice that speaks it; Chatterbox voices are listed first for English when they're installed. **Runtime:** target length from 20 to 90 seconds, captions on or off, and your `@handle` shown on the video.
 - **The reel** on the right lists your finished videos with thumbnails. *Play* opens one; *Copy caption* copies its description and hashtags.
 - **Night shift:** press *+ Add to night shift* on as many videos as you like, then press *Start the night shift* and let it run overnight.
 - The bottom bar shows each step (Script → Voice → Render) and the log on demand. Switch between light and dark at the bottom left.
@@ -130,8 +139,9 @@ The app remembers your mode, style, voice, length and handle in `.ace_settings.j
 | :--- | :--- |
 | `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama` |
 | `--seconds` | Target length (default 55) |
-| `--voice` | A Kokoro preset name, or `chatterbox` |
-| `--speed` | Kokoro speaking speed (default 1.1) |
+| `--language` | `en` (default), `ar`, `de`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ro`, `ru`, `tr`, `uk`, `zh` |
+| `--voice` | A Kokoro preset name, `chatterbox`, or an Edge voice from `src/voice_gen/edge_narration.py`; defaults to the language's first voice |
+| `--speed` | Kokoro and Edge speaking speed (default 1.1) |
 | `--handle` | Shown at the bottom of the video |
 | `--no-captions` | Turns off the word-by-word captions |
 | `--from-storyboard` | Re-voices and re-renders a saved `.storyboard.json` |
@@ -165,7 +175,7 @@ src/llm/provider.py     Claude Code / Gemini auto-detection
 src/motion_gen/         storyboard, voices (Kokoro + Chatterbox worker), render
 src/script_gen/         documentary scripts
 src/video_edit/         image fetching, Ken Burns editing, thumbnails
-src/voice_gen/          Kokoro narration and subtitles
+src/voice_gen/          Kokoro and Edge narration, the language list, subtitles
 src/shorts_gen/         Reddit stories over gameplay
 src/trend_finder/       trending topics
 motion/                 Remotion project: scenes, themes, captions (React + TypeScript)
@@ -193,7 +203,9 @@ All timings are on a 4-core CPU without a GPU.
 | Problem | Solution |
 | :--- | :--- |
 | **Sidebar says "No AI found"** | Run `claude` once and log in, or add `GEMINI_API_KEY` to `.env`. |
-| **"Chatterbox not installed"** | Create `tts_env` (see Setup step 5). |
+| **"Chatterbox not installed"** | Create `tts_env` (see Setup step 6). |
+| **"Online voice failed"** | Non-English voices need internet while recording; check the connection and try again. |
+| **Empty boxes in documentary subtitles or thumbnails** | Install the fonts for that alphabet (see Setup step 5). |
 | **Motion render fails on first run** | Check that `node --version` is 20 or newer. The first render runs `npm install` in `motion/`. |
 | **numpy/torch build failed** | Use Python 3.12 inside WSL. |
 | **espeak-ng / ffmpeg not found** | `sudo apt install ffmpeg espeak-ng` |

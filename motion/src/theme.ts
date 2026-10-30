@@ -61,7 +61,7 @@ export type Theme = {
   banner: BannerStyle;
   // How cast scenes (people) are drawn, and whether headlines sit left or centred.
   render: 'flat' | 'pixel' | '3d';
-  align: 'left' | 'center';
+  align: 'start' | 'center';
   // How far cast-scene sets are pulled toward the background colour (0 = natural colours), and greyscale for print.
   setTone: number;
   setMono?: boolean;
@@ -80,10 +80,21 @@ export type Theme = {
   // Average uppercase glyph width in em, used to shrink long lines so they never overflow.
   displayCharEm: number;
   displayLineHeight: number;
+  // Set per video by localizeTheme (language.ts).
+  language: string;
+  rtl: boolean;
+  // Line height for wrapped display text, roomier for alphabets with tall marks.
+  displayWrapHeight: number;
+  // What separates words: nothing in Chinese and Japanese.
+  wordGap: string;
+  // Arabic and Devanagari letters join up, so tracking would tear words apart.
+  connected: boolean;
 };
 
+const LATIN_LANGUAGE = {language: 'en', rtl: false, displayWrapHeight: 0.98, wordGap: ' ', connected: false};
+
 const dark = {shadow: '0 6px 30px rgba(0,0,0,0.7)', glow: 1, displayScale: 1, displayWeight: 400, displayCharEm: 0.4, displayLineHeight: 0.92,
-  lineWidth: 5, wobble: 0, boil: false, bodyWeight: 600, render: 'flat' as const, align: 'left' as const, setTone: 0.55};
+  lineWidth: 5, wobble: 0, boil: false, bodyWeight: 600, render: 'flat' as const, align: 'start' as const, setTone: 0.55, ...LATIN_LANGUAGE};
 
 export const THEMES: Record<StyleName, Theme> = {
   // Dark cartographic history look: glowing borders, cream type, red accent.
@@ -106,18 +117,20 @@ export const THEMES: Record<StyleName, Theme> = {
   },
   // Old map on aged paper: sepia ink, oxblood accent, serif type. Medieval, ancient, empires.
   parchment: {
+    ...LATIN_LANGUAGE,
     bg: '#e9dcc0', land: '#dccaa3', landFocus: '#cdb487', border: '#b89f74', outline: '#5a3a1e',
     text: '#2b1d10', muted: '#7a6247', accent: '#8e1f14', onAccent: '#f3e8d0', line: '#3a2715',
-    panel: 'rgba(90,58,30,0.05)', texture: 'paper', decor: 'ornate', banner: 'ribbon', render: 'flat', align: 'left', setTone: 0.4, shadow: 'none', glow: 0.35,
+    panel: 'rgba(90,58,30,0.05)', texture: 'paper', decor: 'ornate', banner: 'ribbon', render: 'flat', align: 'start', setTone: 0.4, shadow: 'none', glow: 0.35,
     lineWidth: 4, wobble: 2, boil: false, bodyWeight: 600,
     fonts: {display: playfair, body: lora, mono: courier},
     displayScale: 0.7, displayWeight: 900, displayCharEm: 0.66, displayLineHeight: 1.08,
   },
   // Synthwave glow: cyan lines, magenta accent on deep indigo. Mysteries, space, tech, conspiracies.
   neon: {
+    ...LATIN_LANGUAGE,
     bg: '#07061a', land: '#0f0d2b', landFocus: '#16134a', border: '#2a2368', outline: '#3ef2ff',
     text: '#e8f7ff', muted: '#7b78b8', accent: '#ff2bd6', onAccent: '#07061a', line: '#3ef2ff',
-    panel: 'rgba(62,242,255,0.04)', texture: 'grid', decor: 'synth', banner: 'glow', render: 'flat', align: 'left', setTone: 0.6, glow: 1.6,
+    panel: 'rgba(62,242,255,0.04)', texture: 'grid', decor: 'synth', banner: 'glow', render: 'flat', align: 'start', setTone: 0.6, glow: 1.6,
     // Chromatic split plus glow, like a CRT out of convergence.
     shadow: '-3px 0 0 rgba(62,242,255,0.55), 3px 0 0 rgba(255,43,214,0.6), 0 0 26px rgba(255,43,214,0.45)',
     lineWidth: 4.5, wobble: 0, boil: false, bodyWeight: 600,
@@ -126,15 +139,17 @@ export const THEMES: Record<StyleName, Theme> = {
   },
   // Front page of an old newspaper: black ink on newsprint, red stamp. 1900s events, crimes, disasters.
   newspaper: {
+    ...LATIN_LANGUAGE,
     bg: '#ece7dc', land: '#d9d2c3', landFocus: '#bfb6a3', border: '#a59c8a', outline: '#111111',
     text: '#111111', muted: '#5d574c', accent: '#c41e1e', onAccent: '#f4efe4', line: '#161616',
-    panel: 'rgba(0,0,0,0.035)', texture: 'halftone', decor: 'press', banner: 'stamp', render: 'flat', align: 'left', setTone: 0.2, setMono: true, shadow: 'none', glow: 0.2,
+    panel: 'rgba(0,0,0,0.035)', texture: 'halftone', decor: 'press', banner: 'stamp', render: 'flat', align: 'start', setTone: 0.2, setMono: true, shadow: 'none', glow: 0.2,
     lineWidth: 4.5, wobble: 0.8, boil: false, bodyWeight: 600,
     fonts: {display: oswald, body: oldStandard, mono: specialElite},
     displayScale: 0.8, displayWeight: 700, displayCharEm: 0.5, displayLineHeight: 1.02,
   },
   // 8-bit: pixel-art people on a deep violet night, glowing floor, pixel type.
   pixel: {
+    ...LATIN_LANGUAGE,
     bg: '#0e0a24', land: '#191338', landFocus: '#221a4a', border: '#3a2f7a', outline: '#b6a8ff',
     text: '#efeaff', muted: '#8a82c0', accent: '#a493ff', onAccent: '#0e0a24', line: '#d9d2ff',
     panel: 'rgba(164,147,255,0.05)', texture: 'pixel', decor: 'pixel', banner: 'pixel', render: 'pixel', align: 'center', setTone: 0.5, castOutline: '#140e2c',
@@ -144,6 +159,7 @@ export const THEMES: Record<StyleName, Theme> = {
   },
   // Low-poly 3D people in little sets, soft daylight, elegant serif titles with a gold accent.
   diorama: {
+    ...LATIN_LANGUAGE,
     bg: '#1c1712', land: '#2a241d', landFocus: '#3a3127', border: '#4a4034', outline: '#f0d9a8',
     text: '#fbf6ec', muted: '#d9ccb6', accent: '#f2b84b', onAccent: '#1c1712', line: '#fbf6ec',
     panel: 'rgba(255,255,255,0.05)', texture: 'soft', decor: 'clean', banner: 'pill', render: '3d', align: 'center', setTone: 0,

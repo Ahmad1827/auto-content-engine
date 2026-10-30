@@ -1,5 +1,6 @@
 """Topic -> storyboard: narration plus a visual for every scene, written by the active LLM."""
 from llm.provider import generate
+from voice_gen.edge_narration import LANGUAGES
 
 STYLES = {
     "atlas": "dark cartographic history: glowing country outlines on a dark map, flags, campaign arrows, "
@@ -315,9 +316,23 @@ def _style_block(style):
     return f"Choose the visual style that fits this topic best and return its name in `style`:\n{options}", leans
 
 
-def make_storyboard(topic, style="auto", seconds=55, words_per_second=2.2):
+def _language_block(language):
+    if language == "en":
+        return ""
+    name = LANGUAGES[language]["name"]
+    block = (f"\n\nLanguage: write in {name}, the way a native {name} storyteller would, not a word-for-word translation. "
+             f"Narration, headlines, banners, kickers, labels, tags, dates, quotes, `title` and `caption` (hashtags too) are all in {name}, "
+             f"in its own alphabet, and numbers are written to be read aloud in {name}. Use the established {name} name for people and places, "
+             f"and the established {name} translation of quotes and scripture. Keep field names, enum values, ISO codes and <svg> markup exactly as specified.")
+    if language in ("zh", "ja"):
+        block += " Where this brief counts words, one word means about 2 characters."
+    return block
+
+
+def make_storyboard(topic, style="auto", seconds=55, words_per_second=2.2, language="en"):
     """style is a key of STYLES, or "auto" to let the AI pick one that fits the topic."""
     style_block, lean = _style_block(style)
+    style_block += _language_block(language)
     words = int(seconds * words_per_second)
     prompt = PROMPT.format(topic=topic, style_block=style_block, lean=lean, seconds=seconds,
                            min_words=words - 15, max_words=words,

@@ -62,6 +62,8 @@ export type Scene = {
 
 export type Storyboard = {
   style: StyleName;
+  // ISO 639-1 code of the narration and on-screen text; English when missing.
+  language?: string;
   fps: number;
   width: number;
   height: number;

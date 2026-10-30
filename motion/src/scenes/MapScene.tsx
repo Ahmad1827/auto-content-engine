@@ -66,7 +66,7 @@ export const MapScene: React.FC<{visual: MapVisual; durationInFrames: number}> =
           return p && q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 150;
         });
       }),
-      labels: placeLabels(visual, projection),
+      labels: placeLabels(visual, projection, t.language),
     };
   }, [visual]);
 
@@ -125,7 +125,7 @@ export const MapScene: React.FC<{visual: MapVisual; durationInFrames: number}> =
           <Marker key={`m${i}`} marker={m} project={map.projection} delay={18 + i * 8} crowded={map.crowded[i]} />
         ))}
         {map.labels.map((l, i) => (
-          <text key={`l${i}`} x={l.x} y={l.y} textAnchor={l.anchor} fill={t.text} fontFamily={t.fonts.mono} fontWeight={700}
+          <text key={`l${i}`} x={l.x} y={l.y} textAnchor={l.anchor} direction="ltr" fill={t.text} fontFamily={t.fonts.mono} fontWeight={700}
             fontSize={LABEL_SIZE} letterSpacing={3} opacity={interpolate(frame - l.delay, [0, 8], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})}
             style={{paintOrder: 'stroke', stroke: t.bg, strokeWidth: 8}}>
             {l.text}
@@ -152,11 +152,11 @@ const overlaps = (a: number[], b: number[]) => a[0] < b[2] && b[0] < a[2] && a[1
 
 // Markers label below the dot, arrows next to their start; then each label is nudged
 // up/down until it clears the labels placed before it.
-function placeLabels(visual: MapVisual, project: Projection): Label[] {
+function placeLabels(visual: MapVisual, project: Projection, language: string): Label[] {
   const wanted: Label[] = [];
   (visual.markers ?? []).forEach((m, i) => {
     const p = project([m.lon, m.lat]);
-    if (p && m.label) wanted.push({x: p[0], y: p[1] + 52, anchor: 'middle', text: m.label.toUpperCase(), delay: 22 + i * 8});
+    if (p && m.label) wanted.push({x: p[0], y: p[1] + 52, anchor: 'middle', text: m.label.toLocaleUpperCase(language), delay: 22 + i * 8});
   });
   (visual.arrows ?? []).forEach((ar, i) => {
     const a = project(ar.from);
@@ -164,7 +164,7 @@ function placeLabels(visual: MapVisual, project: Projection): Label[] {
     if (!a || !b || !ar.label) return;
     const right = a[0] >= b[0];
     wanted.push({x: a[0] + (right ? 24 : -24), y: a[1] + (a[1] >= b[1] ? 44 : -20), anchor: right ? 'start' : 'end',
-      text: ar.label.toUpperCase(), delay: 24 + i * 10});
+      text: ar.label.toLocaleUpperCase(language), delay: 24 + i * 10});
   });
 
   const placed: Label[] = [];

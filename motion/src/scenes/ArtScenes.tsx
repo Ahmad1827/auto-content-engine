@@ -67,14 +67,15 @@ export const CounterScene: React.FC<{visual: Extract<Visual, {type: 'counter'}>}
   const {fps} = useVideoConfig();
   const p = interpolate(frame, [0, 1.3 * fps], [0, 1], {extrapolateRight: 'clamp', easing: (x) => 1 - Math.pow(1 - x, 3)});
   const pop = spring({frame: frame - 1.3 * fps, fps, config: {damping: 9, stiffness: 200}});
-  const value = Math.round(visual.value * p).toLocaleString('en-US');
+  const locale = t.language === 'ar' ? 'ar-EG' : t.language;
+  const value = Math.round(visual.value * p).toLocaleString(locale);
 
   return (
     <div style={{position: 'absolute', left: 72, right: 72, top: 420, textAlign: 'center'}}>
       <div
         style={{
           fontFamily: t.fonts.display, fontWeight: t.displayWeight, lineHeight: 0.9, color: t.accent,
-          fontSize: fitDisplay(t, `${visual.prefix ?? ''}${visual.value.toLocaleString('en-US')}${visual.suffix ?? ''}`, 330),
+          fontSize: fitDisplay(t, `${visual.prefix ?? ''}${visual.value.toLocaleString(locale)}${visual.suffix ?? ''}`, 330),
           transform: `scale(${1 + 0.06 * pop * (1 - pop) * 4})`, textShadow: t.glow > 0.5 ? `0 0 ${60 * t.glow}px ${t.accent}55` : 'none',
         }}
       >
@@ -99,7 +100,7 @@ export const TitleScene: React.FC<{visual: Extract<Visual, {type: 'title'}>; rai
 
   return (
     <div style={{position: 'absolute', left: 72, right: 72, top: raised ? 280 : 520}}>
-      <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: 170 * t.displayScale, lineHeight: 0.98, color: t.text, textShadow: t.shadow, opacity: s, transform: `translateY(${(1 - s) * 40}px)`}}>
+      <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: 170 * t.displayScale, lineHeight: t.displayWrapHeight, color: t.text, textShadow: t.shadow, opacity: s, transform: `translateY(${(1 - s) * 40}px)`}}>
         {visual.text.split('*').map((part, i) => <span key={i} style={{color: i % 2 ? t.accent : t.text}}>{part}</span>)}
       </div>
       <div style={{height: 6, width: 260 * rule, background: t.accent, margin: '36px 0'}} />

@@ -20,13 +20,13 @@ export const TimelineScene: React.FC<{visual: Extract<Visual, {type: 'timeline'}
 
   return (
     <div style={{position: 'absolute', inset: 0}}>
-      <div style={{position: 'absolute', left: 140, top, width: 4, height: span * lineP, background: t.border}} />
+      <div style={{position: 'absolute', insetInlineStart: 140, top, width: 4, height: span * lineP, background: t.border}} />
       {events.map((e, i) => {
         const s = spring({frame: frame - i * stagger, fps, config: {damping: 14}});
         const on = i === active;
         const color = on ? t.accent : t.text;
         return (
-          <div key={i} style={{position: 'absolute', left: 120, right: 72, top: top + i * gap - 30, display: 'flex', alignItems: 'center', gap: 44, opacity: on ? s : s * 0.75}}>
+          <div key={i} style={{position: 'absolute', insetInlineStart: 120, insetInlineEnd: 72, top: top + i * gap - 30, display: 'flex', alignItems: 'center', gap: 44, opacity: on ? s : s * 0.75}}>
             <div
               style={{
                 width: 44, height: 44, borderRadius: 22, flexShrink: 0, background: on ? t.accent : t.bg,
@@ -34,7 +34,7 @@ export const TimelineScene: React.FC<{visual: Extract<Visual, {type: 'timeline'}
                 boxShadow: on && t.glow > 0.5 ? `0 0 ${24 * t.glow}px ${t.accent}` : 'none',
               }}
             />
-            <div style={{transform: `translateX(${(1 - s) * 60}px)`}}>
+            <div style={{transform: `translateX(${(1 - s) * (t.rtl ? -60 : 60)}px)`}}>
               <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: fitDisplay(t, e.date, on ? 120 : 92, 760), lineHeight: 1, color, textShadow: t.shadow}}>
                 {e.date}
               </div>
@@ -59,14 +59,14 @@ export const QuoteScene: React.FC<{visual: Extract<Visual, {type: 'quote'}>; dur
   const mark = spring({frame, fps: 30, config: {damping: 12}});
 
   return (
-    <div style={{position: 'absolute', left: 90, right: 110, top: 380}}>
-      <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: 300, lineHeight: 0.6, height: 150, color: t.accent, opacity: mark, transform: `scale(${mark})`, transformOrigin: 'left top'}}>
-        “
+    <div style={{position: 'absolute', insetInlineStart: 90, insetInlineEnd: 110, top: 380}}>
+      <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: 300, lineHeight: 0.6, height: 150, color: t.accent, opacity: mark, transform: `scale(${mark})`, transformOrigin: t.rtl ? 'right top' : 'left top'}}>
+        {t.rtl ? '”' : '“'}
       </div>
       <div style={{fontFamily: t.fonts.body, fontWeight: 600, fontSize: size, lineHeight: 1.28, color: t.text, textShadow: t.shadow}}>
         {words.map((w, i) => (
           <span key={i} style={{opacity: interpolate(shown - i, [0, 1], [0.12, 1], clamp)}}>
-            {w}{' '}
+            {w}{t.wordGap}
           </span>
         ))}
       </div>
@@ -82,8 +82,10 @@ export const QuoteScene: React.FC<{visual: Extract<Visual, {type: 'quote'}>; dur
   );
 };
 
+// Reads "1,000", "1.000" and "١٠٠٠" alike: native digits become 0-9 and thousands separators go.
 const toNumber = (v: string) => {
-  const n = parseFloat(v.replace(/[^0-9.]/g, ''));
+  const digits = v.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x966));
+  const n = parseFloat(digits.replace(/[.,٬](?=\d{3}(\D|$))/g, '').replace(/[,٫]/g, '.').replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? n : NaN;
 };
 
@@ -109,7 +111,8 @@ export const VersusScene: React.FC<{visual: Extract<Visual, {type: 'versus'}>}> 
   };
 
   return (
-    <div style={{position: 'absolute', left: 72, right: 72, top: 270}}>
+    // Left and right stay as written so the bars keep growing from the middle.
+    <div style={{position: 'absolute', left: 72, right: 72, top: 270, direction: 'ltr'}}>
       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
         <Side side={visual.left} dir={1} />
         <div style={{fontFamily: t.fonts.display, fontWeight: t.displayWeight, fontSize: 110 * t.displayScale, color: t.accent, transform: `scale(${vs})`}}>VS</div>

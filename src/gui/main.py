@@ -17,6 +17,7 @@ from gui import theme as T
 from gui.theme import ROOT
 
 from script_gen.generator import get_script
+from voice_gen.edge_narration import EDGE_VOICES, LANGUAGES, voice_language
 from voice_gen.kokoro_narration import generate_voice, VOICE_PRESETS
 from voice_gen.subtitles import generate_srt_from_chunks
 from video_edit.editor import create_video as create_doc_video
@@ -26,7 +27,7 @@ from video_edit.downloader import prepare_assets
 try:
     from video_edit.thumbnail import create_thumbnail
 except ImportError:
-    def create_thumbnail(topic_hint, output_path="thumbnail.jpg"):
+    def create_thumbnail(topic_hint, output_path="thumbnail.jpg", language="en"):
         print("[Warning] thumbnail.py is missing! Skipping thumbnail generation.")
 
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
@@ -56,6 +57,8 @@ def _voice_label(key):
 
 KOKORO_VOICES = {_voice_label(k): k for k in VOICE_PRESETS}
 MOTION_VOICES = {**({_voice_label(k): k for k in CHATTERBOX_VOICES} if chatterbox_available() else {}), **KOKORO_VOICES}
+EDGE_VOICE_LABELS = {_voice_label(k): k for k in EDGE_VOICES}
+LANGUAGE_CODES = {lang["name"]: code for code, lang in LANGUAGES.items()}
 
 
 def load_settings():
@@ -132,7 +135,7 @@ def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_
         prepare_assets(text, use_web=do_web, use_ai=do_ai, custom_keywords=custom_keywords, image_count=img_count, is_short=is_short)
 
     progress(40, "Voice", "Recording the narration...")
-    selected_voice = voice if voice in VOICE_PRESETS else DEFAULT_PRESET
+    selected_voice = voice if voice in VOICE_PRESETS or voice in EDGE_VOICES else DEFAULT_PRESET
     audio_path, chunk_timings = generate_voice(text, output_path="video_final.wav", preset=selected_voice)
     if not audio_path:
         raise RuntimeError("Audio generation failed!")
@@ -141,7 +144,7 @@ def process_content(text, custom_keywords, do_web, do_ai, is_short, sec_per_img_
     progress(70, "Render", "Rendering the video...")
     create_doc_video(srt_path=srt_path, is_short=is_short, scene_duration=sec_per_img)
     progress(92, "Render", "Painting the thumbnail...")
-    create_thumbnail(topic_hint=custom_keywords or topic)
+    create_thumbnail(topic_hint=custom_keywords or topic, language=voice_language(selected_voice))
     return archive_output("final_video.mp4", topic), None
 
 
@@ -207,7 +210,7 @@ def run_task(task):
     script = task.get("script")
     if not script:
         progress(3, "Script", "Writing the script...")
-        script = get_script(task["topic"], task["subtopics"], str(task["minutes"]))
+        script = get_script(task["topic"], task["subtopics"], str(task["minutes"]), language=voice_language(task["voice"]))
         if script.startswith(("Error:", "AI Error:")):
             raise RuntimeError(f"Script generation failed: {script}")
     with open("generated_script.txt", "w", encoding="utf-8") as f:
@@ -386,6 +389,53 @@ def option_menu(parent, values, value, command=None, width=320):
     return menu
 
 
+class VoicePicker(ctk.CTkFrame):
+    """A language menu, and a voice menu that only lists voices speaking that language."""
+
+    def __init__(self, parent, key, english_voices, english_default=None, english_hint=""):
+        super().__init__(parent, fg_color="transparent")
+        self.key, self.english_voices, self.english_default, self.english_hint = key, english_voices, english_default, english_hint
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(anchor="w")
+        names = list(LANGUAGE_CODES)
+        self.language = option_menu(row, names, settings.get(f"{key}_language", "English"), self._language_changed, width=170)
+        self.language.pack(side="left", padx=(0, 10))
+        self.voice_menu = option_menu(row, list(english_voices), english_default or "", self._voice_changed)
+        self.voice_menu.pack(side="left")
+        self.hint = ctk.CTkLabel(self, text="", font=T.font(T.MONO, 11), text_color=T.MUTED)
+        self._language_changed(self.language.get())
+
+    def _setting(self):
+        code = LANGUAGE_CODES[self.language.get()]
+        return f"{self.key}_voice" if code == "en" else f"{self.key}_voice_{code}"
+
+    def _voices(self):
+        if LANGUAGE_CODES[self.language.get()] == "en":
+            return list(self.english_voices)
+        return [label for label, preset in EDGE_VOICE_LABELS.items() if voice_language(preset) == LANGUAGE_CODES[self.language.get()]]
+
+    def _language_changed(self, name):
+        save_settings(**{f"{self.key}_language": name})
+        english = LANGUAGE_CODES[name] == "en"
+        voices = self._voices()
+        saved = settings.get(self._setting(), self.english_default if english else None)
+        self.voice_menu.configure(values=voices)
+        self.voice_menu.set(saved if saved in voices else voices[0])
+        hint = self.english_hint if english else "Online voice: needs internet while it records."
+        self.hint.configure(text=hint)
+        if hint:
+            self.hint.pack(anchor="w", pady=(6, 0))
+        else:
+            self.hint.pack_forget()
+
+    def _voice_changed(self, label):
+        save_settings(**{self._setting(): label})
+
+    def preset(self):
+        label = self.voice_menu.get()
+        return EDGE_VOICE_LABELS.get(label) or self.english_voices[label]
+
+
 def switch(parent, text, value=True):
     var = ctk.BooleanVar(value=value)
     ctk.CTkSwitch(parent, text=text, variable=var, font=T.font(T.SANS, 13), text_color=T.INK, progress_color=T.ACCENT,
@@ -511,12 +561,9 @@ class MotionPanel(ctk.CTkFrame):
         self.pick_style(self.style)
 
         section(self, "03", "Voice")
-        voices = list(MOTION_VOICES)
-        self.voice = option_menu(self, voices, settings.get("motion_voice", voices[0]), lambda v: save_settings(motion_voice=v))
+        hint = "" if chatterbox_available() else "Chatterbox (the natural free voice) isn't installed; see the README."
+        self.voice = VoicePicker(self, "motion", MOTION_VOICES, english_hint=hint)
         self.voice.pack(anchor="w")
-        if not chatterbox_available():
-            ctk.CTkLabel(self, text="Chatterbox (the natural free voice) isn't installed; see the README.",
-                         font=T.font(T.MONO, 11), text_color=T.MUTED).pack(anchor="w", pady=(6, 0))
 
         section(self, "04", "Runtime")
         row = ctk.CTkFrame(self, fg_color="transparent")
@@ -604,7 +651,7 @@ class MotionPanel(ctk.CTkFrame):
             handle = "@" + handle
         save_settings(handle=handle, motion_seconds=self.seconds.get(), motion_captions=self.captions.get())
         return {"mode": "motion", "topic": topic or "Manual_Video", "script": script, "style": self.style,
-                "voice": MOTION_VOICES[self.voice.get()], "seconds": self.seconds.get(), "captions": self.captions.get(),
+                "voice": self.voice.preset(), "seconds": self.seconds.get(), "captions": self.captions.get(),
                 "handle": handle, "label": f"Motion · {topic or 'own script'}"}
 
     def make(self):
@@ -642,8 +689,7 @@ class DocPanel(ctk.CTkFrame):
         self.background.pack(side="left")
 
         section(self, "03", "Voice")
-        voices = list(KOKORO_VOICES)
-        self.voice = option_menu(self, voices, settings.get("doc_voice", _voice_label(DEFAULT_PRESET)), lambda v: save_settings(doc_voice=v))
+        self.voice = VoicePicker(self, "doc", KOKORO_VOICES, english_default=_voice_label(DEFAULT_PRESET))
         self.voice.pack(anchor="w")
 
         section(self, "04", "Details")
@@ -721,7 +767,7 @@ class DocPanel(ctk.CTkFrame):
                 "subtopics": self.subtopics.get().strip(), "minutes": minutes,
                 "is_short": self.format.get().startswith("9:16"), "background": self.background.get().title(),
                 "sec_per_img": f["sec_per_img"], "img_count": f["img_count"], "keywords": self.keywords.get().strip(),
-                "do_web": self.do_web.get(), "do_ai": self.do_ai.get(), "voice": KOKORO_VOICES[self.voice.get()],
+                "do_web": self.do_web.get(), "do_ai": self.do_ai.get(), "voice": self.voice.preset(),
                 "label": f"Documentary · {topic or 'own script'}"}
 
     def make(self):

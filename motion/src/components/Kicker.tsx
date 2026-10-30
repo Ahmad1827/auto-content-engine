@@ -12,7 +12,7 @@ export const Kicker: React.FC<{text: string}> = ({text}) => {
   return (
     <div
       style={{
-        position: 'absolute', top: 150, left: 72, right: t.align === 'center' ? 72 : undefined, opacity,
+        position: 'absolute', top: 150, insetInlineStart: 72, insetInlineEnd: t.align === 'center' ? 72 : undefined, opacity,
         justifyContent: t.align === 'center' ? 'center' : undefined,
         display: 'flex', alignItems: 'center', gap: 16,
         fontFamily: t.fonts.mono, fontWeight: 700, fontSize: 30, letterSpacing: 4,

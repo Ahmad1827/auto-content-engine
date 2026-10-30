@@ -33,7 +33,7 @@ export const HeadlineBlock: React.FC<{headline: Headline; top?: number}> = ({hea
               fontSize: fitDisplay(t, line.text, SIZES[line.size ?? 'l']),
               letterSpacing: 1, opacity: s,
               transform: `translateY(${(1 - s) * 50}px) scale(${1 + (1 - s) * 0.18})`,
-              transformOrigin: t.align === 'center' ? 'center' : 'left center',
+              transformOrigin: t.align === 'center' ? 'center' : t.rtl ? 'right center' : 'left center',
               textShadow: t.shadow,
             }}
           >

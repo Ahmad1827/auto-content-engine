@@ -1,3 +1,4 @@
+import {useMemo} from 'react';
 import {AbsoluteFill, Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Backdrop} from './components/Backdrop';
 import {Captions} from './components/Captions';
@@ -8,6 +9,7 @@ import {CompareScene, CounterScene, IllustrationScene, TitleScene} from './scene
 import {CastScene} from './scenes/CastScene';
 import {QuoteScene, TimelineScene, VersusScene} from './scenes/InfoScenes';
 import {MapScene} from './scenes/MapScene';
+import {localizeTheme} from './language';
 import {THEMES, ThemeContext, useTheme} from './theme';
 import type {Scene, Storyboard} from './types';
 
@@ -44,7 +46,7 @@ const SceneBody: React.FC<{scene: Scene; durationInFrames: number}> = ({scene, d
 const Handle: React.FC<{handle: string}> = ({handle}) => {
   const t = useTheme();
   return (
-    <div style={{position: 'absolute', top: 1640, width: '100%', textAlign: 'center', fontFamily: t.fonts.mono, fontSize: 28, color: t.muted, letterSpacing: 2}}>
+    <div style={{position: 'absolute', top: 1640, width: '100%', textAlign: 'center', fontFamily: t.fonts.mono, fontSize: 28, color: t.muted, letterSpacing: 2, direction: 'ltr'}}>
       —— {handle} ——
     </div>
   );
@@ -52,9 +54,11 @@ const Handle: React.FC<{handle: string}> = ({handle}) => {
 
 export const Story: React.FC<Storyboard> = (props) => {
   const {fps} = useVideoConfig();
+  const theme = useMemo(() => localizeTheme(THEMES[props.style] ?? THEMES.atlas, props.language ?? 'en', JSON.stringify(props.scenes)), [props.style, props.language, props.scenes]);
   return (
-    <ThemeContext.Provider value={THEMES[props.style] ?? THEMES.atlas}>
-      <AbsoluteFill>
+    <ThemeContext.Provider value={theme}>
+      <AbsoluteFill lang={theme.language} className={theme.connected ? 'connected-script' : undefined} style={{direction: theme.rtl ? 'rtl' : 'ltr'}}>
+        {theme.connected && <style>{'.connected-script, .connected-script * {letter-spacing: 0 !important}'}</style>}
         <Backdrop />
         {props.scenes.map((scene, i) => {
           const from = Math.round(scene.start * fps);

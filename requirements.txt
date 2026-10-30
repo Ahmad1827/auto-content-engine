@@ -6,4 +6,6 @@ python-dotenv
 Pillow
 kokoro>=0.9.4
 soundfile
-numpycustomtkinter
+numpy
+customtkinter
+edge-tts
