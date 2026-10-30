@@ -24,6 +24,8 @@ It runs on your own computer. If you have **Claude Code** it uses your Claude su
 
 The AI combines these scene types: cast (people acting out the moment in a set: they wave, walk, sit, sleep, pray, point, fight and more, dressed for their time and place), map (country or region zoom, flags, markers, arrows), title card, counter, line-art illustration, with/without comparison, timeline, quote and versus.
 
+Each style has its own moving background, scene transition, text animation and caption highlight, and text is measured as it renders so it shrinks to fit instead of overflowing.
+
 Diorama renders in real 3D, so it is the slowest style: about 14 minutes for a 60-second video on a CPU.
 
 ---

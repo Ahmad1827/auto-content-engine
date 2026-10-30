@@ -33,18 +33,29 @@ export const LineArt: React.FC<{svg: string; drawSeconds?: number; delay?: numbe
     elements.forEach((el, i) => {
       // Each element gets an overlapping slice of the overall progress.
       const local = Math.min(1, Math.max(0, (progress - (i / n) * 0.7) / 0.3));
-      if (el.classList.contains('solid') || el.classList.contains('warm')) {
+      if (el.classList.contains('warm')) {
+        // Glows breathe once they are up.
+        el.style.opacity = String(local * (0.82 + Math.sin(frame / 14) * 0.18));
+        return;
+      }
+      if (el.classList.contains('solid')) {
         el.style.opacity = String(local);
         return;
       }
       const len = el.getTotalLength?.() || 1000;
+      // Once drawn, accent strokes keep flowing like marching ants.
+      if (progress >= 1 && el.classList.contains('accent')) {
+        el.style.strokeDasharray = '26 14';
+        el.style.strokeDashoffset = String(-frame * 2);
+        return;
+      }
       el.style.strokeDasharray = `${len}`;
       el.style.strokeDashoffset = `${len * (1 - local)}`;
     });
     root.querySelectorAll<SVGTextElement>('text').forEach((el) => {
       el.style.opacity = String(Math.min(1, Math.max(0, (progress - 0.6) / 0.4)));
     });
-  }, [progress, html]);
+  }, [progress, html, frame]);
 
   return (
     <div ref={ref} style={{width: '100%', height: '100%'}}>

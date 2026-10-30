@@ -13,9 +13,12 @@ export const FIGURE_HEIGHT = 400;
 type Held = 'phone' | 'book' | 'sword';
 
 export type Layout = {k: number; feetY: number; spread: number};
+export type CastMode = 'stage' | 'low' | 'panel';
 
 // Where the stage sits inside a W x H box: full-frame scenes vs. small panels.
-export function layoutFor(W: number, H: number, mode: 'stage' | 'panel'): Layout {
+export function layoutFor(W: number, H: number, mode: CastMode): Layout {
+  // `low` is a full-frame scene with the people further down and smaller, under a headline.
+  if (mode === 'low') return {k: (0.3 * H) / FIGURE_HEIGHT, feetY: 0.83 * H, spread: 0.3 * W};
   return mode === 'stage'
     ? {k: (0.34 * H) / FIGURE_HEIGHT, feetY: 0.72 * H, spread: 0.3 * W}
     : {k: (0.7 * H) / FIGURE_HEIGHT, feetY: 0.88 * H, spread: 0.34 * W};
@@ -35,7 +38,7 @@ function holders(people: Person[], props: Prop[] = []): (Held | undefined)[] {
   return held;
 }
 
-export const FlatScene: React.FC<{cast: Cast; t: Theme; time: number; W: number; H: number; mode: 'stage' | 'panel'; enter: number[]; crisp?: boolean}> = ({cast, t, time, W, H, mode, enter, crisp}) => {
+export const FlatScene: React.FC<{cast: Cast; t: Theme; time: number; W: number; H: number; mode: CastMode; enter: number[]; crisp?: boolean}> = ({cast, t, time, W, H, mode, enter, crisp}) => {
   const L = layoutFor(W, H, mode);
   const xs = stagePositions(cast.people);
   const held = holders(cast.people, cast.props);

@@ -4,7 +4,7 @@ import {useTheme} from '../theme';
 // Where the parchment compass rose sits; its rhumb lines radiate from here (Decor draws the rose itself).
 export const COMPASS = {x: 930, y: 1760};
 // Neon horizon, below the captions and handle: the perspective floor runs from here to the bottom.
-const HORIZON = 1700;
+export const HORIZON = 1700;
 
 // Background per theme: base color, vignette and a texture. Sits under every scene.
 export const Backdrop: React.FC = () => {
@@ -51,7 +51,6 @@ export const Backdrop: React.FC = () => {
       {t.texture === 'pixel' && (
         <>
           <AbsoluteFill style={{background: `radial-gradient(ellipse at 50% 70%, ${t.accent}22 0%, transparent 55%)`}} />
-          <PixelStars frame={frame} color={t.line} />
           {/* Ordered-dither shading toward the corners, in square 6px dots. */}
           <AbsoluteFill style={{
             backgroundImage: 'linear-gradient(45deg, rgba(0,0,0,0.35) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.35) 75%), linear-gradient(45deg, rgba(0,0,0,0.35) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.35) 75%)',
@@ -139,18 +138,3 @@ const SynthFloor: React.FC<{frame: number; line: string; accent: string; bg: str
     </svg>
   );
 };
-
-// Square pixel stars that blink on and off in steps.
-const PixelStars: React.FC<{frame: number; color: string}> = ({frame, color}) => (
-  <svg width={1080} height={1920} style={{position: 'absolute', inset: 0}} shapeRendering="crispEdges">
-    {Array.from({length: 40}, (_, i) => {
-      const r = (k: number) => {
-        const x = Math.sin((i + k) * 127.1 + 311.7) * 43758.5453;
-        return x - Math.floor(x);
-      };
-      const on = Math.floor(frame / 8 + r(3) * 10) % 5 !== 0;
-      const size = r(5) > 0.8 ? 9 : 6;
-      return <rect key={i} x={Math.floor((r(1) * 1080) / 6) * 6} y={Math.floor((r(2) * 1300) / 6) * 6} width={size} height={size} fill={color} opacity={on ? 0.25 + r(4) * 0.5 : 0.08} />;
-    })}
-  </svg>
-);

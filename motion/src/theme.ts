@@ -169,6 +169,9 @@ export const THEMES: Record<StyleName, Theme> = {
   },
 };
 
+// The part of the frame scenes may use: under the kicker, above the captions, clear of the TikTok buttons.
+export const STAGE = {top: 240, bottom: 1385, left: 72, right: 72, width: 936};
+
 // Display font size for one line of `text`: the design size, shrunk if the line would overflow.
 export function fitDisplay(t: Theme, text: string, size: number, maxWidth = 936): number {
   const chars = Math.max(1, text.replace(/\*/g, '').length);

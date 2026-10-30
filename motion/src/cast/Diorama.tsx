@@ -58,16 +58,18 @@ const Cyl: React.FC<{r: [number, number]; h: number; pos?: [number, number, numb
   </mesh>
 );
 
-export const DioramaScene: React.FC<{cast: Cast; W: number; H: number; mode: 'stage' | 'panel'; enter: number[]}> = ({cast, W, H, mode, enter}) => {
+export const DioramaScene: React.FC<{cast: Cast; W: number; H: number; mode: 'stage' | 'low' | 'panel'; enter: number[]}> = ({cast, W, H, mode, enter}) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames} = useVideoConfig();
   const time = frame / fps;
   const look = LOOKS[cast.setting] ?? LOOKS.empty;
-  const stage = mode === 'stage';
-  const dist = stage ? 7.4 : 4.6;
+  const stage = mode !== 'panel';
+  // `low` pulls back and tilts up, leaving the top of the frame to a headline.
+  const lift = mode === 'low' ? 0.55 : 0;
+  const dist = mode === 'low' ? 8.1 : stage ? 7.4 : 4.6;
   const dolly = 1 + 0.07 * (1 - Math.min(1, frame / Math.max(1, durationInFrames)));
-  const camY = stage ? 1.75 : 1.5;
-  const target = new THREE.Vector3(0, stage ? 1.06 : 0.95, 0);
+  const camY = (stage ? 1.75 : 1.5) + lift;
+  const target = new THREE.Vector3(0, (stage ? 1.06 : 0.95) + lift, 0);
   const orbit = Math.sin(time * 0.35) * 0.35;
   const xs = stagePositions(cast.people).map((x) => x * (stage ? 0.95 : 1.4));
 

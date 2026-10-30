@@ -2,12 +2,12 @@ import {useCurrentFrame, useVideoConfig} from 'remotion';
 import {useTheme} from '../theme';
 import type {Cast} from '../types';
 import {DioramaScene} from './Diorama';
-import {FlatScene} from './Flat';
+import {type CastMode, FlatScene} from './Flat';
 import {PixelScene} from './Pixel';
 
 // Draws a cast in the current style's renderer: flat cartoon, pixel art or 3D.
 // People pop in one after another, `delay` frames after the view appears.
-export const CastView: React.FC<{cast: Cast; W: number; H: number; mode: 'stage' | 'panel'; delay?: number}> = ({cast, W, H, mode, delay = 0}) => {
+export const CastView: React.FC<{cast: Cast; W: number; H: number; mode: CastMode; delay?: number}> = ({cast, W, H, mode, delay = 0}) => {
   const t = useTheme();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();

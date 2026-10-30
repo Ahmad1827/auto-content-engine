@@ -3,12 +3,12 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {continueRender, delayRender} from 'remotion';
 import type {Theme} from '../theme';
 import type {Cast} from '../types';
-import {FlatScene} from './Flat';
+import {type CastMode, FlatScene} from './Flat';
 
 // Pixel art: the flat scene drawn into a tiny canvas, then blown up with nearest-neighbour scaling.
 const PIXEL = 12;
 
-export const PixelScene: React.FC<{cast: Cast; t: Theme; time: number; W: number; H: number; mode: 'stage' | 'panel'; enter: number[]}> = ({cast, t, time, W, H, mode, enter}) => {
+export const PixelScene: React.FC<{cast: Cast; t: Theme; time: number; W: number; H: number; mode: CastMode; enter: number[]}> = ({cast, t, time, W, H, mode, enter}) => {
   const ref = useRef<HTMLCanvasElement>(null);
   const w = Math.round(W / PIXEL);
   const h = Math.round(H / PIXEL);
