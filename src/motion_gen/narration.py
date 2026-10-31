@@ -114,7 +114,7 @@ def _edge_clips(texts, preset, speed, log):
         yield synthesize(text, EDGE_VOICES[preset]["voice"], speed)
 
 
-def voice_scenes(scenes, wav_path, preset=DEFAULT_PRESET, speed=1.1, log=print):
+def voice_scenes(scenes, wav_path, preset=DEFAULT_PRESET, speed=1.1, log=print, scene_gap=SCENE_GAP):
     """Fills scene["start"]/["duration"] in place, writes one WAV, returns the word list."""
     import soundfile as sf
 
@@ -122,14 +122,14 @@ def voice_scenes(scenes, wav_path, preset=DEFAULT_PRESET, speed=1.1, log=print):
     engine = engine_for(preset)
     clips = (_edge_clips(texts, preset, speed, log) if engine == "edge" else
              _chatterbox_clips(texts, preset, log) if engine == "chatterbox" else _kokoro_clips(texts, preset, speed, log))
-    gap = np.zeros(int(SAMPLE_RATE * SCENE_GAP), dtype=np.float32)
+    gap = np.zeros(int(SAMPLE_RATE * scene_gap), dtype=np.float32)
 
     audio, words, cursor = [], [], 0.0
     for scene, (clip, scene_words) in zip(scenes, clips):
         words += [dict(w, start=round(w["start"] + cursor, 3), end=round(w["end"] + cursor, 3)) for w in scene_words]
         audio += [clip, gap]
         scene["start"] = round(cursor, 3)
-        scene["duration"] = round(len(clip) / SAMPLE_RATE + SCENE_GAP, 3)
+        scene["duration"] = round(len(clip) / SAMPLE_RATE + scene_gap, 3)
         cursor += scene["duration"]
 
     if not audio:

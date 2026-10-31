@@ -14,6 +14,7 @@ It runs on your own computer. If you have **Claude Code** it uses your Claude su
 | :--- | :--- |
 | **Motion graphics** | Animated 9:16 explainers drawn with code: glowing maps with flags and arrows, line-art illustrations, counters, timelines, quotes and "versus" stat battles, with word-by-word captions. Made for history and religion content. |
 | **Documentary** | A narrated video over web and AI images (Ken Burns), with subtitles and a thumbnail. Vertical or horizontal, short or long. |
+| **Custom Film** | A 3D cartoon written as new code for each video by Claude Code: its own set, cast, camera and acting, in a warm clay-like look. Takes about 35 minutes and needs Claude Code. |
 | **Reddit story** | A top Reddit story read aloud over gameplay footage, with bold subtitles. |
 
 ### Motion graphics styles
@@ -54,6 +55,14 @@ The app's sidebar shows which one is active.
 ---
 
 ## Setup
+
+### Windows: use ACE.exe
+
+Download `ACE.exe` from the [latest release](https://github.com/Ahmad1827/auto-content-engine/releases/latest) and run it. ACE runs inside WSL, so the first launch sets up WSL if it's missing (this needs a restart), then installs ACE and everything it needs into `~/auto-content-engine` in Ubuntu. That takes several minutes and a few GB, and later launches open straight away. Windows may warn about an unrecognised app, because the file isn't code-signed: choose **More info**, then **Run anyway**.
+
+You still need to set up the AI (step 3), from inside Ubuntu.
+
+### Manual setup
 
 Everything is tested on **WSL2 (Ubuntu) with Python 3.12**. A GPU is not needed.
 
@@ -139,7 +148,8 @@ The app remembers your mode, style, voice, length and handle in `.ace_settings.j
 
 | Flag | Meaning |
 | :--- | :--- |
-| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama` |
+| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama`, `film` |
+| `--format` | With `--style film`: the kind of story, such as `relatable` (see `make_motion.py --help`) |
 | `--seconds` | Target length (default 55) |
 | `--language` | `en` (default), `ar`, `de`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ro`, `ru`, `tr`, `uk`, `zh` |
 | `--voice` | A Kokoro preset name, `chatterbox`, or an Edge voice from `src/voice_gen/edge_narration.py`; defaults to the language's first voice |
@@ -181,6 +191,8 @@ src/voice_gen/          Kokoro and Edge narration, the language list, subtitles
 src/shorts_gen/         Reddit stories over gameplay
 src/trend_finder/       trending topics
 motion/                 Remotion project: scenes, themes, captions (React + TypeScript)
+motion/src/film/        Custom Film kit: characters, acting, sets, lighting, and the brief Claude Code works from
+packaging/windows/      source of ACE.exe
 assets/fonts, assets/ui bundled fonts (OFL) and style previews
 output/                 finished motion videos (not in git)
 ```
@@ -219,4 +231,4 @@ All timings are on a 4-core CPU without a GPU.
 
 ## Credits
 
-[Remotion](https://www.remotion.dev) · [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) · [Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI, MIT) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) · [Natural Earth](https://www.naturalearthdata.com) via world-atlas · [flag-icons](https://github.com/lipis/flag-icons) · DM Serif Display and IBM Plex (SIL Open Font License)
+[Remotion](https://www.remotion.dev) · [Quaternius](https://quaternius.com) animation libraries (CC0) · [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) · [Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI, MIT) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) · [Natural Earth](https://www.naturalearthdata.com) via world-atlas · [flag-icons](https://github.com/lipis/flag-icons) · DM Serif Display and IBM Plex (SIL Open Font License)

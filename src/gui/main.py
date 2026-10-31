@@ -41,7 +41,7 @@ THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 
 MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "cartoon"),
                  ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s"),
-                 ("pixel", "Pixel", "8-bit people"), ("diorama", "Diorama", "3D people")]
+                 ("pixel", "Pixel", "8-bit people"), ("diorama", "Diorama", "3D people"), ("film", "Custom Film", "built for you")]
 STAGES = {"motion": ["Script", "Voice", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
 BATCH_MODE = False
@@ -187,6 +187,9 @@ def process_motion(task):
                 pass
         elif msg.startswith("[Render] Rendering"):
             progress(45, "Render", "Rendering the video...")
+        elif msg.startswith("[Film] "):
+            text = msg.removeprefix("[Film] ")
+            progress(*((5, "Script") if text.startswith("Writing the film") else (45, "Render")), text)
 
     progress(3, "Script", "Writing the storyboard...")
     result = make_motion_video(subject, style=task["style"], voice=task["voice"], captions=task["captions"],

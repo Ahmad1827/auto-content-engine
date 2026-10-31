@@ -4,6 +4,7 @@ import os
 import re
 
 from llm.provider import describe_provider
+from motion_gen.film import make_film, render_film
 from motion_gen.narration import DEFAULT_PRESET, voice_language, voice_scenes, words_per_second
 from motion_gen.render import ROOT, render
 from motion_gen.storyboard import make_storyboard
@@ -16,8 +17,11 @@ def _slug(text):
     return re.sub(r"\W+", "_", text.lower()).strip("_")[:60] or "video"
 
 
-def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, captions=True, handle="", seconds=55, log=print):
+def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, captions=True, handle="", seconds=55, film_format="auto", log=print):
     log(f"[Motion] AI: {describe_provider()}")
+    if style == "film":
+        return make_film(topic, _slug, voice, speed=speed, captions=captions, handle=handle, seconds=seconds, music_path=MUSIC_PATH,
+                         output_dir=OUTPUT_DIR, film_format=film_format, log=log)
     log(f"[Motion] Writing storyboard for: {topic}")
     language = voice_language(voice)
     board = make_storyboard(topic, style, seconds, words_per_second(voice), language)
@@ -42,6 +46,8 @@ def rerender_storyboard(storyboard_path, log=print):
     with open(storyboard_path, encoding="utf-8") as f:
         props = json.load(f)
     base = storyboard_path.removesuffix(".storyboard.json")
+    if props.get("film"):
+        return render_film(props["film"], base + ".mp4", log)
     return _voice_and_render(props, base, log)
 
 

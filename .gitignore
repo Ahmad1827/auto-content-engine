@@ -51,3 +51,7 @@ motion/public/jobs/
 motion/out/
 tts_env/
 .ace_settings.json
+
+# Generated films
+motion/films/
+motion/public/films/
