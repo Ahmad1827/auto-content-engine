@@ -58,13 +58,15 @@ The app's sidebar shows which one is active.
 
 ### Windows: use ACE.exe
 
-Download `ACE.exe` from the [latest release](https://github.com/Ahmad1827/auto-content-engine/releases/latest) and run it. ACE runs inside WSL, so the first launch sets up WSL if it's missing (this needs a restart), then installs ACE and everything it needs into `~/auto-content-engine` in Ubuntu. That takes several minutes and a few GB, and later launches open straight away. Windows may warn about an unrecognised app, because the file isn't code-signed: choose **More info**, then **Run anyway**.
+Download `ACE.exe` from the [latest release](https://github.com/Ahmad1827/auto-content-engine/releases/latest) and run it. There's nothing else to install, and it doesn't need WSL or admin rights. The first launch downloads ACE with its own private Python, Node.js and ffmpeg into `%LOCALAPPDATA%\ACE`, which takes about 10 minutes and 3 GB, and later launches open straight away. Windows may warn about an unrecognised app, because the file isn't code-signed: choose **More info**, then **Run anyway**.
 
-You still need to set up the AI (step 3), from inside Ubuntu.
+For the AI, install [Claude Code](https://claude.com/claude-code) on Windows and log in once with `claude`, or put a `.env` file in `%LOCALAPPDATA%\ACE\app` (step 3). Your videos are in `%LOCALAPPDATA%\ACE\app\output`.
 
-### Manual setup
+Chatterbox voices aren't set up by `ACE.exe`.
 
-Everything is tested on **WSL2 (Ubuntu) with Python 3.12**. A GPU is not needed.
+### Manual setup on Linux or WSL
+
+For working on ACE itself. This is tested on **WSL2 (Ubuntu) with Python 3.12**. A GPU is not needed.
 
 ### 1. System packages
 

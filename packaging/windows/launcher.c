@@ -1,123 +1,95 @@
-// ACE.exe: the app runs inside WSL, so this checks WSL is there, has it set everything up the first time, and opens the app.
+// ACE.exe: installs ACE into %LOCALAPPDATA%\ACE the first time and after an update, then opens the app.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #include "script.h"
 
-static int run(const char *command) {
-    STARTUPINFOA si = {sizeof(si)};
-    PROCESS_INFORMATION pi;
-    DWORD code = 1;
-    char *line = _strdup(command);
-    if (!CreateProcessA(NULL, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        free(line);
-        return -1;
-    }
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    free(line);
-    return (int)code;
-}
-
-// Runs a command with its output kept out of the console. Fills `out` if it's given.
-static int capture(const char *command, char *out, size_t size) {
-    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
-    HANDLE read, write;
-    if (!CreatePipe(&read, &write, &sa, 0)) return -1;
-    SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0);
-    STARTUPINFOA si = {sizeof(si)};
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = si.hStdError = write;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION pi;
-    char *line = _strdup(command);
-    BOOL started = CreateProcessA(NULL, line, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
-    free(line);
-    CloseHandle(write);
-    size_t used = 0;
-    DWORD got = 0;
-    char chunk[1024];
-    while (started && ReadFile(read, chunk, sizeof(chunk), &got, NULL) && got) {
-        for (DWORD i = 0; i < got; i++) {
-            // wsl.exe writes UTF-16, so the zero bytes between letters are dropped.
-            if (out && chunk[i] && used + 1 < size) out[used++] = chunk[i];
-        }
-    }
-    if (out) out[used] = 0;
-    CloseHandle(read);
-    if (!started) return -1;
-    DWORD code = 1;
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    return (int)code;
-}
-
-// The default distribution can't be trusted: Docker Desktop's has no bash or apt. Picks an Ubuntu if there is one, or else any distribution with apt.
-static int find_distro(char *name, size_t size) {
-    char list[4096];
-    if (capture("wsl.exe -l -q", list, sizeof(list)) != 0) return 0;
-    for (int ubuntu_only = 1; ubuntu_only >= 0; ubuntu_only--) {
-        char copy[4096];
-        strcpy(copy, list);
-        for (char *d = strtok(copy, "\r\n"); d; d = strtok(NULL, "\r\n")) {
-            if (ubuntu_only && _strnicmp(d, "Ubuntu", 6) != 0) continue;
-            char test[512];
-            snprintf(test, sizeof(test), "wsl.exe -d %s -e sh -c \"command -v apt-get && command -v bash\"", d);
-            if (capture(test, NULL, 0) == 0) {
-                snprintf(name, size, "%s", d);
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
+static char base[MAX_PATH];
 
 static void leave(int code) {
+    ShowWindow(GetConsoleWindow(), SW_SHOW);
     printf("\nPress Enter to close this window.");
     fflush(stdout);
     getchar();
     exit(code);
 }
 
-// The script travels on the command line, so the install can still use this console.
-static int phase(const char *distro, const char *user, const char *name) {
-    size_t size = sizeof(SCRIPT_B64) + 512;
-    char *command = malloc(size);
-    snprintf(command, size, "wsl.exe -d %s %s -e bash -c \"echo %s | base64 -d > /tmp/ace-launch-%s.sh && ACE_VERSION=%s bash /tmp/ace-launch-%s.sh %s\"", distro, user, SCRIPT_B64, name, ACE_VERSION, name, name);
-    int code = run(command);
-    free(command);
+static int run(char *line, const char *dir) {
+    STARTUPINFOA si = {sizeof(si)};
+    PROCESS_INFORMATION pi;
+    DWORD code = 1;
+    if (!CreateProcessA(NULL, line, NULL, NULL, FALSE, 0, NULL, dir, &si, &pi)) return -1;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)code;
+}
+
+static int installed(void) {
+    char path[MAX_PATH + 32], found[64] = "";
+    snprintf(path, sizeof(path), "%s\\.version", base);
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    if (!fgets(found, sizeof(found), f)) found[0] = 0;
+    fclose(f);
+    found[strcspn(found, "\r\n")] = 0;
+    return strcmp(found, ACE_VERSION) == 0;
+}
+
+static int install(void) {
+    char script[MAX_PATH + 32], line[MAX_PATH * 2];
+    GetTempPathA(MAX_PATH, script);
+    strcat(script, "ace-setup.ps1");
+    FILE *f = fopen(script, "wb");
+    if (!f) return -1;
+    fwrite(SETUP_PS1, 1, SETUP_PS1_LEN, f);
+    fclose(f);
+    printf("\nInstalling ACE. This needs internet, takes about 10 minutes and uses about 3 GB. It only happens once.\n");
+    snprintf(line, sizeof(line), "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%s\" -Version %s", script, ACE_VERSION);
+    int code = run(line, NULL);
+    DeleteFileA(script);
     return code;
 }
 
 int main(void) {
     SetConsoleTitleA("ACE - Auto Content Engine");
     printf("ACE %s\n", ACE_VERSION);
+    const char *local = getenv("LOCALAPPDATA");
+    if (!local) {
+        printf("\nCouldn't find your AppData folder.\n");
+        leave(1);
+    }
+    snprintf(base, sizeof(base), "%s\\ACE", local);
+    CreateDirectoryA(base, NULL);
 
-    char distro[256];
-    if (!find_distro(distro, sizeof(distro))) {
-        printf("\nACE runs inside WSL (Windows Subsystem for Linux) with Ubuntu, and that isn't set up on this PC.\n\n");
-        printf("Install it now? Windows will ask for permission, and you'll need to restart afterwards. [y/n] ");
-        fflush(stdout);
-        int answer = getchar();
-        if (answer != 'y' && answer != 'Y') leave(1);
-        ShellExecuteA(NULL, "runas", "wsl.exe", "--install -d Ubuntu", NULL, SW_SHOWNORMAL);
-        printf("\nWhen that window finishes, restart your PC, open Ubuntu once from the Start menu to choose a username, and then run ACE.exe again.\n");
-        leave(0);
+    if (!installed()) {
+        int code = install();
+        if (code != 0) {
+            printf("\nThe install stopped with error %d. The messages above say why, and it's usually the internet connection. Run ACE.exe again to carry on.\n", code);
+            leave(code);
+        }
     }
 
-    printf("\nThe first launch installs everything and takes several minutes. After that, ACE opens straight away.\n");
-    printf("Using %s.\n", distro);
-    int code = phase(distro, "-u root", "root");
-    if (code != 0) {
-        printf("\nCouldn't install the system packages (error %d). The messages above say why; it's usually the internet connection.\n", code);
-        leave(code);
-    }
-    code = phase(distro, "", "user");
+    // Programs ACE starts use this hidden console, so that they don't flash up windows of their own.
+    DWORD ours[4];
+    if (GetConsoleProcessList(ours, 4) == 1) ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+    char path[32767], line[MAX_PATH * 2], dir[MAX_PATH + 8];
+    const char *old = getenv("PATH");
+    snprintf(path, sizeof(path), "%s\\python;%s\\python\\Scripts;%s\\node;%s\\ffmpeg\\bin;%s", base, base, base, base, old ? old : "");
+    SetEnvironmentVariableA("PATH", path);
+    SetEnvironmentVariableA("PYTHONUTF8", "1");
+    // Our own temp folder: the system one can be cleaned while a render is still using it.
+    char temp[MAX_PATH + 8];
+    snprintf(temp, sizeof(temp), "%s\\temp", base);
+    CreateDirectoryA(temp, NULL);
+    SetEnvironmentVariableA("TEMP", temp);
+    SetEnvironmentVariableA("TMP", temp);
+    snprintf(dir, sizeof(dir), "%s\\app", base);
+    snprintf(line, sizeof(line), "\"%s\\python\\python.exe\" run.py", base);
+    int code = run(line, dir);
     if (code != 0) {
         printf("\nACE stopped with error %d. The messages above say why.\n", code);
         leave(code);

@@ -25,7 +25,7 @@ def _find_claude_binary():
     if found:
         return found
     # GUI launches often have a trimmed PATH, so also check the standard install spots.
-    for candidate in ("~/.local/bin/claude", "~/.claude/local/claude", "/usr/local/bin/claude"):
+    for candidate in ("~/.local/bin/claude", "~/.local/bin/claude.exe", "~/.claude/local/claude", "/usr/local/bin/claude"):
         path = os.path.expanduser(candidate)
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path

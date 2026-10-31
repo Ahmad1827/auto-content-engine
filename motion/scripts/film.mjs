@@ -30,7 +30,7 @@ function option(name) {
 }
 
 function typecheck() {
-  const out = spawnSync(path.join(MOTION, 'node_modules', '.bin', 'tsc'), ['--noEmit', '-p', path.join(FILM, 'tsconfig.json')], {cwd: FILM, encoding: 'utf8'});
+  const out = spawnSync(process.execPath, [path.join(MOTION, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit', '-p', path.join(FILM, 'tsconfig.json')], {cwd: FILM, encoding: 'utf8'});
   const text = `${out.stdout}${out.stderr}`.trim();
   if (out.status !== 0) {
     console.error(`TYPE ERRORS\n${text.split('\n').slice(0, 40).join('\n')}`);
@@ -91,7 +91,7 @@ function terrain() {
     console.error('Usage: terrain <west> <south> <east> <north>');
     process.exit(2);
   }
-  const python = process.env.ACE_PYTHON || 'python3';
+  const python = process.env.ACE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
   const dest = path.join(MOTION, 'public', 'films', path.basename(FILM));
   const out = spawnSync(python, [path.join(MOTION, '..', 'src', 'motion_gen', 'terrain.py'), ...box, dest], {encoding: 'utf8'});
   process.stdout.write(out.stdout);

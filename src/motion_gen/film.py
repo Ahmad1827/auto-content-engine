@@ -101,6 +101,17 @@ AGENT_TOOLS = ["--tools", "Read,Write,Edit,Glob,Grep,Bash",
                "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", "project"]
 
 
+def _own_group():
+    return {} if sys.platform == "win32" else {"start_new_session": True}
+
+
+def _kill_group(proc):
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 def _raise_voice(wav):
     """Brings the narration up to a full, consistent level: TTS voices come out quiet."""
     import soundfile as sf
@@ -167,9 +178,9 @@ def _run_agent(folder, prompt, session, resume, log):
     if model:
         cmd += ["--model", model]
     env = dict(_claude_env(), ACE_PYTHON=sys.executable)
-    proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+    proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **_own_group())
     # The whole process group goes on timeout, including any render the agent started.
-    watchdog = threading.Timer(BUILD_TIMEOUT, lambda: os.killpg(proc.pid, signal.SIGKILL))
+    watchdog = threading.Timer(BUILD_TIMEOUT, lambda: _kill_group(proc))
     watchdog.start()
     result = None
     tail = []

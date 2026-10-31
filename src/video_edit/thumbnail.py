@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import subprocess
 from PIL import Image, ImageDraw, ImageFont
@@ -8,12 +9,15 @@ from voice_gen.edge_narration import LANGUAGES
 
 load_dotenv()
 
-LATIN_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+WINDOWS_FONTS = {"hi": "Nirmala.ttf", "ja": "YuGothB.ttc", "ko": "malgunbd.ttf", "zh": "msyhbd.ttc"}
+LATIN_FONT = "C:/Windows/Fonts/arialbd.ttf" if sys.platform == "win32" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 def _load_font(language, size):
     """DejaVu covers Latin, Cyrillic and Arabic; other alphabets take whatever system font fontconfig has for them."""
     path = LATIN_FONT
-    if language in ("hi", "ja", "ko", "zh"):
+    if sys.platform == "win32":
+        path = f"C:/Windows/Fonts/{WINDOWS_FONTS[language]}" if language in WINDOWS_FONTS else LATIN_FONT
+    elif language in ("hi", "ja", "ko", "zh"):
         path = subprocess.run(["fc-match", "-f", "%{file}", f":lang={language}:bold"], capture_output=True, text=True).stdout or LATIN_FONT
     try:
         return ImageFont.truetype(path, size)

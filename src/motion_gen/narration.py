@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import numpy as np
@@ -15,7 +16,7 @@ SCENE_GAP = 0.3
 DEFAULT_PRESET = "🇺🇸 AM - Michael (Deep/News)"
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TTS_PYTHON = os.path.join(ROOT, "tts_env", "bin", "python")
+TTS_PYTHON = os.path.join(ROOT, "tts_env", "Scripts", "python.exe") if sys.platform == "win32" else os.path.join(ROOT, "tts_env", "bin", "python")
 
 # Chatterbox runs in its own venv (tts_env); ~10x slower than real time on CPU, much more natural than Kokoro.
 CHATTERBOX_VOICES = {
