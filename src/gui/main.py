@@ -41,7 +41,7 @@ THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 
 MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "cartoon"),
                  ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s"),
-                 ("pixel", "Pixel", "8-bit people"), ("diorama", "Diorama", "3D people"), ("film", "Custom Film", "built for you")]
+                 ("pixel", "Pixel", "8-bit"), ("diorama", "Diorama", "3D people"), ("film", "Film", "custom 3D")]
 STAGES = {"motion": ["Script", "Voice", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
 BATCH_MODE = False
@@ -558,9 +558,11 @@ class MotionPanel(ctk.CTkFrame):
         cards.pack(fill="x")
         self.cards = {}
         self.style = settings.get("motion_style", "auto")
-        for key, name, note in MOTION_STYLES:
+        # Equal columns, so that every card fits the row.
+        for i, (key, name, note) in enumerate(MOTION_STYLES):
+            cards.grid_columnconfigure(i, weight=1, uniform="card")
             self.cards[key] = self._card(cards, key, name, note)
-            self.cards[key].pack(side="left", padx=(0, 6))
+            self.cards[key].grid(row=0, column=i, sticky="nsew", padx=(0, 5))
         self.pick_style(self.style)
 
         section(self, "03", "Voice")
@@ -590,10 +592,10 @@ class MotionPanel(ctk.CTkFrame):
         card = ctk.CTkFrame(parent, fg_color=T.SURFACE, corner_radius=8, border_width=2, border_color=T.RULE, cursor="hand2")
         thumb_path = os.path.join(ROOT, "assets", "ui", f"style_{key}.jpg")
         if os.path.exists(thumb_path):
-            img = ctk.CTkImage(Image.open(thumb_path), size=(70, 124))
-            art = ctk.CTkLabel(card, text="", image=img, width=70, height=124)
+            img = ctk.CTkImage(Image.open(thumb_path), size=(60, 106))
+            art = ctk.CTkLabel(card, text="", image=img, width=60, height=106)
         else:
-            art = ctk.CTkLabel(card, text="?", width=70, height=124, font=T.font(T.SERIF, 56, slant="italic"),
+            art = ctk.CTkLabel(card, text="?", width=60, height=106, font=T.font(T.SERIF, 56, slant="italic"),
                                text_color=T.ACCENT, fg_color=T.FIELD, corner_radius=4)
         art.pack(padx=5, pady=(5, 4))
         name_l = ctk.CTkLabel(card, text=name, font=T.font(T.SANS, 12, "bold"), text_color=T.INK, height=16)
