@@ -50,7 +50,7 @@ LOG_LINES = 2000
 STAGES = {"motion": ["Script", "Voice", "Build", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
 CARD_WIDTH = 76
-QUEUE_MAX = 130
+QUEUE_MAX = 60
 
 BATCH_MODE = False
 batch_queue = []
@@ -1267,7 +1267,7 @@ key_button(start_q_btn).pack(fill="x", pady=(12, 0))
 tape = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0)
 tape.grid(row=2, column=1, columnspan=2, sticky="ew")
 ctk.CTkFrame(tape, height=1, fg_color=T.RULE).pack(fill="x")
-log_box = ctk.CTkTextbox(root, height=230, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
+log_box = ctk.CTkTextbox(root, height=120, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
                          border_color=T.RULE, corner_radius=0, wrap="word", state="disabled")
 tape_row = ctk.CTkFrame(tape, fg_color="transparent")
 tape_row.pack(fill="x", padx=20, pady=10)
