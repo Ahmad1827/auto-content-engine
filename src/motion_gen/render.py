@@ -2,10 +2,35 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
+import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MOTION_DIR = os.path.join(ROOT, "motion")
+RUNNING = set()
+
+
+def own_group():
+    return {} if sys.platform == "win32" else {"start_new_session": True}
+
+
+def kill_group(proc):
+    """Stops a process and everything it started."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def stop_running():
+    """Closing the app must not leave Claude Code or a render working in the background."""
+    for proc in list(RUNNING):
+        if proc.poll() is None:
+            kill_group(proc)
 
 
 def _npm_bin(name):
@@ -24,7 +49,8 @@ def ensure_installed(log=print):
 
 
 def _stream(cmd, log):
-    proc = subprocess.Popen(cmd, cwd=MOTION_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    proc = subprocess.Popen(cmd, cwd=MOTION_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **own_group())
+    RUNNING.add(proc)
     last_pct = -10
     tail = []
     for line in proc.stdout:
@@ -44,7 +70,9 @@ def _stream(cmd, log):
                 last_pct = pct
         elif "error" in line.lower():
             log(f"[Render] {line}")
-    if proc.wait() != 0:
+    code = proc.wait()
+    RUNNING.discard(proc)
+    if code != 0:
         raise RuntimeError("Remotion render failed:\n" + "\n".join(tail))
 
 

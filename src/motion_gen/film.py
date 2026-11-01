@@ -2,7 +2,6 @@
 import json
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -11,7 +10,7 @@ import uuid
 
 from llm.provider import LLMError, _claude_env, active_provider, detect_claude_code, generate
 from motion_gen.narration import voice_language, voice_scenes, words_per_second
-from motion_gen.render import MOTION_DIR, ROOT, _npm_bin, _stream, ensure_installed
+from motion_gen.render import MOTION_DIR, ROOT, RUNNING, _npm_bin, _stream, ensure_installed, kill_group, own_group
 from voice_gen.edge_narration import LANGUAGES
 
 FILMS_DIR = os.path.join(MOTION_DIR, "films")
@@ -130,17 +129,6 @@ AGENT_TOOLS = ["--tools", "Read,Write,Edit,Glob,Grep,Bash",
 
 def can_build_films():
     return active_provider() == "claude" and bool(detect_claude_code())
-
-
-def _own_group():
-    return {} if sys.platform == "win32" else {"start_new_session": True}
-
-
-def _kill_group(proc):
-    if sys.platform == "win32":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
-    else:
-        os.killpg(proc.pid, signal.SIGKILL)
 
 
 def _raise_voice(wav):
@@ -270,9 +258,10 @@ def _run_agent(folder, prompt, session, resume, log):
     if model:
         cmd += ["--model", model]
     env = dict(_claude_env(), ACE_PYTHON=sys.executable)
-    proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **_own_group())
+    proc = subprocess.Popen(cmd, cwd=folder, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **own_group())
+    RUNNING.add(proc)
     # The whole process group goes on timeout, including any render the agent started.
-    watchdog = threading.Timer(BUILD_TIMEOUT, lambda: _kill_group(proc))
+    watchdog = threading.Timer(BUILD_TIMEOUT, lambda: kill_group(proc))
     watchdog.start()
     result = None
     tail = []
@@ -297,6 +286,7 @@ def _run_agent(folder, prompt, session, resume, log):
     finally:
         expired = not watchdog.is_alive()
         watchdog.cancel()
+        RUNNING.discard(proc)
     if expired:
         raise LLMError(f"The film build passed its {BUILD_TIMEOUT // 60} minute limit.")
     if result is None:

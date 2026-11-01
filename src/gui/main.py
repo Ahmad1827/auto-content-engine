@@ -8,8 +8,9 @@ import shutil
 import subprocess
 import sys
 import threading
-import tkinter
 import time
+import tkinter
+from tkinter import messagebox
 
 import customtkinter as ctk
 from PIL import Image
@@ -34,7 +35,8 @@ except ImportError:
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
 from llm.provider import describe_provider, generate
-from motion_gen.film import FORMATS, can_build_films
+from motion_gen.film import can_build_films
+from motion_gen.render import stop_running
 from motion_gen.pipeline import OUTPUT_DIR, make_motion_video
 from motion_gen.narration import CHATTERBOX_VOICES, DEFAULT_PRESET, chatterbox_available
 
@@ -50,9 +52,10 @@ LOG_LINES = 2000
 STAGES = {"motion": ["Script", "Voice", "Build", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
 CARD_WIDTH = 76
-QUEUE_MAX = 60
+QUEUE_ROWS = 3
 
 BATCH_MODE = False
+busy = False
 batch_queue = []
 
 
@@ -257,6 +260,10 @@ def execute(task):
 
 
 def run_now(task):
+    # One video at a time: two renders at once would bring the machine to a halt.
+    if busy:
+        set_status("Already working on a video. Add this one to the night shift instead.", T.ACCENT)
+        return
     set_busy(True)
 
     def worker():
@@ -269,6 +276,9 @@ def start_batch():
     global BATCH_MODE
     if not batch_queue:
         set_status("The night shift queue is empty. Add a few videos first.", T.ACCENT)
+        return
+    if busy:
+        set_status("A video is being made. Start the night shift when it's done.", T.ACCENT)
         return
     BATCH_MODE = True
     set_busy(True)
@@ -359,12 +369,14 @@ def job_failed(message):
     show_log(True)
 
 
-def set_busy(busy):
-    if not busy and BATCH_MODE:
+def set_busy(on):
+    global busy
+    if not on and BATCH_MODE:
         return
-    state = "disabled" if busy else "normal"
+    busy = on
+    state = "disabled" if on else "normal"
     for panel in panels.values():
-        panel.make_btn.configure(state=state, text=panel.busy_text if busy else panel.make_text)
+        panel.make_btn.configure(state=state, text=panel.busy_text if on else panel.make_text)
     start_q_btn.configure(state=state)
 
 
@@ -377,25 +389,35 @@ def copy_text(text, message):
 # ==========================================
 # WIDGET HELPERS
 # ==========================================
-def focusable(widget, activate, ring=None):
-    """Lets a widget be reached with Tab and used with Space or Enter. CustomTkinter's own widgets can't be."""
+def on_keys(widget, handlers):
+    """Binds on the widget itself: CustomTkinter's own bind goes to an inner canvas, which never has the focus."""
+    for sequence, handler in handlers.items():
+        tkinter.Misc.bind(widget, sequence, handler, "+")
+
+
+def focusable(widget, activate, ring=None, color=T.ACCENT, after_blur=None):
+    """Lets a widget be reached with Tab and used with Space or Enter, showing a ring while it has the focus."""
     tkinter.Frame.configure(widget, takefocus=1)
     ring = ring or widget
 
     def show(on):
         try:
-            if "border_width" in ring.__dict__ or hasattr(ring, "_border_width"):
-                if not hasattr(ring, "ace_border"):
-                    ring.ace_border = (ring.cget("border_color"), ring.cget("border_width"))
-                ring.configure(border_color=T.INK if on else ring.ace_border[0], border_width=2 if on else ring.ace_border[1])
+            if not hasattr(ring, "ace_border"):
+                ring.ace_border = ring.cget("border_color"), ring.cget("border_width")
+            ring.configure(border_color=color if on else ring.ace_border[0], border_width=ring.ace_border[1] + 2 if on else ring.ace_border[1])
         except (ValueError, tkinter.TclError):
             pass
+        if not on and after_blur:
+            after_blur()
 
-    widget.bind("<FocusIn>", lambda e: show(True), add="+")
-    widget.bind("<FocusOut>", lambda e: show(False), add="+")
-    for key in ("<space>", "<Return>"):
-        widget.bind(key, lambda e: (activate(), "break")[1], add="+")
+    press = lambda e: (activate(), "break")[1]
+    on_keys(widget, {"<FocusIn>": lambda e: show(True), "<FocusOut>": lambda e: show(False), "<space>": press, "<Return>": press})
     return widget
+
+
+def text_focus(widget, color=T.INK):
+    """For widgets with no border to light up: their text takes the accent colour while they have the focus."""
+    on_keys(widget, {"<FocusIn>": lambda e: widget.configure(text_color=T.ACCENT), "<FocusOut>": lambda e: widget.configure(text_color=color)})
 
 
 def section(parent, number, title, pady=(22, 10)):
@@ -435,10 +457,8 @@ def option_menu(parent, values, value, command=None, width=320):
                              dropdown_hover_color=T.FIELD_HOVER, dropdown_text_color=T.INK, corner_radius=6,
                              command=command, dynamic_resizing=False)
     menu.set(value if value in values else values[0])
-    # An option menu has no border to light up, so its text takes the accent colour when it has focus.
     focusable(menu, menu._open_dropdown_menu)
-    menu.bind("<FocusIn>", lambda e: menu.configure(text_color=T.ACCENT), add="+")
-    menu.bind("<FocusOut>", lambda e: menu.configure(text_color=T.INK), add="+")
+    text_focus(menu)
     return menu
 
 
@@ -495,8 +515,7 @@ def switch(parent, text, value=True):
                            button_color=T.SURFACE, button_hover_color=T.FIELD, fg_color=T.RULE, switch_width=38, switch_height=20)
     widget.pack(side="left", padx=(0, 22))
     focusable(widget, widget.toggle)
-    widget.bind("<FocusIn>", lambda e: widget.configure(text_color=T.ACCENT), add="+")
-    widget.bind("<FocusOut>", lambda e: widget.configure(text_color=T.INK), add="+")
+    text_focus(widget)
     return var
 
 
@@ -510,7 +529,7 @@ class Choice(ctk.CTkFrame):
         self.colors = on, off, hover
         self.buttons = {}
         for opt in options:
-            b = ctk.CTkButton(self, text=opt, width=0, height=30, font=T.font(T.MONO, size, "bold"), corner_radius=6,
+            b = ctk.CTkButton(self, text=opt, width=0, height=30, font=T.font(T.MONO, size, "bold"), corner_radius=6, border_color=T.ACCENT,
                               command=lambda o=opt: self.set(o, notify=True))
             b.pack(side="left", padx=3, pady=3)
             key_button(b)
@@ -539,8 +558,10 @@ class ScriptToggle:
         self.on_change = on_change
         self.link = link_button(parent, "+ paste my own script instead", self.toggle, T.ACCENT)
         self.link.pack(anchor="w", pady=(8, 0))
-        self.box = ctk.CTkTextbox(parent, height=150, font=T.font(T.SANS, 13), fg_color=T.FIELD, border_color=T.RULE,
+        self.box = ctk.CTkTextbox(parent, height=120, font=T.font(T.SANS, 13), fg_color=T.FIELD, border_color=T.RULE,
                                   border_width=1, text_color=T.INK, corner_radius=6, wrap="word")
+
+        self.box.bind("<Tab>", lambda e: (self.box.tk_focusNext().focus_set(), "break")[1])
 
     def toggle(self):
         self.on = not self.on
@@ -584,7 +605,7 @@ def pick_from_list(title, items, on_pick):
             set_busy(False)
 
     for i, text in enumerate(items):
-        option = ctk.CTkButton(listing, text=text[:90], anchor="w", height=40, font=T.font(T.SANS, 13), fg_color=T.SURFACE,
+        option = ctk.CTkButton(listing, text=text if len(text) <= 62 else text[:61] + "…", anchor="w", height=40, font=T.font(T.SANS, 13), fg_color=T.SURFACE,
                       hover_color=T.FIELD_HOVER, text_color=T.INK, corner_radius=6,
                       command=lambda i=i: choose(i), border_color=T.INK)
         key_button(option).pack(fill="x", pady=3, padx=4)
@@ -644,9 +665,14 @@ class MotionPanel(ctk.CTkFrame):
         row.pack(fill="x")
         self.seconds = ctk.IntVar(value=settings.get("motion_seconds", 60))
         self.seconds_label = ctk.CTkLabel(row, text="", width=64, anchor="w", font=T.font(T.SERIF, 26), text_color=T.INK)
-        ctk.CTkSlider(row, from_=20, to=90, number_of_steps=14, variable=self.seconds, width=170, height=16,
-                      progress_color=T.ACCENT, button_color=T.INK, button_hover_color=T.ACCENT, fg_color=T.RULE,
-                      command=lambda v: self._seconds_changed()).pack(side="left", padx=(0, 14))
+        slider = ctk.CTkSlider(row, from_=20, to=90, number_of_steps=14, variable=self.seconds, width=170, height=16,
+                               progress_color=T.ACCENT, button_color=T.INK, button_hover_color=T.ACCENT, fg_color=T.RULE,
+                               command=lambda v: self._seconds_changed())
+        slider.pack(side="left", padx=(0, 14))
+        tkinter.Frame.configure(slider, takefocus=1)
+        nudge = lambda by: (self.seconds.set(max(20, min(90, self.seconds.get() + by))), self._seconds_changed(), "break")[2]
+        on_keys(slider, {"<Left>": lambda e: nudge(-5), "<Right>": lambda e: nudge(5),
+                         "<FocusIn>": lambda e: slider.configure(button_color=T.ACCENT), "<FocusOut>": lambda e: slider.configure(button_color=T.INK)})
         self.seconds_label.pack(side="left", padx=(0, 14))
         self._seconds_changed()
         self.captions = switch(row, "Captions", settings.get("motion_captions", True))
@@ -670,11 +696,12 @@ class MotionPanel(ctk.CTkFrame):
     def _cards_resized(self, event):
         width = event.width / ctk.ScalingTracker.get_widget_scaling(self)
         if width > 1:
-            self._lay_out_cards(max(3, min(len(MOTION_STYLES), int(width // CARD_WIDTH))))
+            # Even rows only: never one or two cards left over on a line of their own.
+            self._lay_out_cards(next((n for n in (9, 5, 3) if width >= n * CARD_WIDTH), 3))
 
     def _card(self, parent, key, name, note):
         card = ctk.CTkFrame(parent, fg_color=T.SURFACE, corner_radius=8, border_width=2, border_color=T.RULE, cursor="hand2")
-        focusable(card, lambda k=key: self.pick_style(k))
+        focusable(card, lambda k=key: self.pick_style(k), color=T.INK, after_blur=self._paint_cards)
         thumb_path = os.path.join(ROOT, "assets", "ui", f"style_{key}.jpg")
         if os.path.exists(thumb_path):
             img = ctk.CTkImage(Image.open(thumb_path), size=(60, 106))
@@ -695,9 +722,13 @@ class MotionPanel(ctk.CTkFrame):
     def pick_style(self, key):
         self.style = key
         save_settings(motion_style=key)
+        self._paint_cards()
+
+    def _paint_cards(self):
         for k, card in self.cards.items():
-            card.configure(border_color=T.ACCENT if k == key else T.RULE)
-            card.name_label.configure(text_color=T.ACCENT if k == key else T.INK)
+            card.ace_border = (T.ACCENT if k == self.style else T.RULE), 2
+            card.configure(border_color=card.ace_border[0])
+            card.name_label.configure(text_color=T.ACCENT if k == self.style else T.INK)
 
     def _seconds_changed(self):
         self.seconds_label.configure(text=f"{self.seconds.get()}s")
@@ -899,6 +930,8 @@ class RedditPanel(ctk.CTkFrame):
                 "voice": KOKORO_VOICES[self.voice.get()], "label": f"Reddit · r/{sub}"}
 
     def make(self):
+        if busy:
+            return
         task = self.task()
         set_busy(True)
         set_status(f"Fetching top stories from r/{task['subreddit']}...", T.MUTED)
@@ -931,7 +964,7 @@ def actions(panel, queue_hint=""):
     panel.make_btn = ctk.CTkButton(row, text=panel.make_text, command=panel.make, width=210, height=54,
                                    font=T.font(T.SANS, 16, "bold"), fg_color=T.ACCENT, hover_color=T.ACCENT_HOVER,
                                    text_color=T.ON_ACCENT, text_color_disabled=T.ON_ACCENT, border_color=T.INK, corner_radius=8)
-    key_button(panel.make_btn).pack(side="left")
+    focusable(panel.make_btn, lambda: panel.make_btn.invoke() if panel.make_btn.cget("state") != "disabled" else None, color=T.INK).pack(side="left")
     ghost_button(row, "+ Add to night shift", lambda: add_to_queue(panel), width=170, height=54).pack(side="left", padx=(12, 0))
     if queue_hint:
         ctk.CTkLabel(panel, text=queue_hint, font=T.font(T.MONO, 11), text_color=T.MUTED).pack(anchor="w", pady=(8, 0))
@@ -965,18 +998,21 @@ def refresh_queue():
     for w in queue_list.winfo_children():
         w.destroy()
     queue_count.configure(text=f"{len(batch_queue):02d}")
-    queue_list.configure(height=min(QUEUE_MAX, max(44, len(batch_queue) * 30)))
     if not batch_queue:
         ctk.CTkLabel(queue_list, text="Nothing queued. Line up videos,\nstart the shift, go to sleep.",
                      font=T.font(T.MONO, 11), text_color=T.MUTED, justify="left").pack(anchor="w", pady=4)
         return
-    for i, task in enumerate(batch_queue):
+    # A short list, so that a long queue can't crowd out the reel or the start button.
+    for i, task in enumerate(batch_queue[:QUEUE_ROWS]):
         row = ctk.CTkFrame(queue_list, fg_color="transparent")
         row.pack(fill="x", pady=1)
         ctk.CTkLabel(row, text=f"{i + 1:02d}", font=T.font(T.MONO, 11, "bold"), text_color=T.ACCENT).pack(side="left")
         if not BATCH_MODE:
             link_button(row, "×", lambda i=i: remove_from_queue(i), size=14).pack(side="right")
-        ctk.CTkLabel(row, text=task["label"][:30], font=T.font(T.SANS, 12), text_color=T.INK, anchor="w").pack(side="left", padx=8)
+        label = task["label"] if len(task["label"]) <= 30 else task["label"][:29] + "…"
+        ctk.CTkLabel(row, text=label, font=T.font(T.SANS, 12), text_color=T.INK, anchor="w").pack(side="left", padx=8)
+    if len(batch_queue) > QUEUE_ROWS:
+        ctk.CTkLabel(queue_list, text=f"+ {len(batch_queue) - QUEUE_ROWS} more", font=T.font(T.MONO, 11), text_color=T.MUTED).pack(anchor="w")
 
 
 def _prettify(stem):
@@ -1200,8 +1236,7 @@ for key, name, note in [("motion", "Motion graphics", "every style, from scratch
     note_l.pack(anchor="w")
     for w in (btn, btn.bar, text, btn.title_l, note_l):
         w.bind("<Button-1>", lambda e, k=key: switch_mode(k))
-    focusable(btn, lambda k=key: switch_mode(k), ring=btn.bar)
-    btn.bind("<FocusIn>", lambda e, b=btn: b.title_l.configure(text_color=T.SLATE_INK), add="+")
+    focusable(btn, lambda k=key: switch_mode(k), color=T.SLATE_INK)
     root.bind(f"<Control-Key-{len(mode_buttons) + 1}>", lambda e, k=key: switch_mode(k))
     mode_buttons[key] = btn
 
@@ -1256,7 +1291,7 @@ queue_count = ctk.CTkLabel(shift_head, text="00", font=T.font(T.MONO, 12, "bold"
 queue_count.pack(side="left", padx=10, pady=(6, 0))
 link_button(shift_head, "clear", clear_queue, size=11).pack(side="right")
 ctk.CTkFrame(shift, height=1, fg_color=T.RULE).pack(fill="x", pady=(8, 10))
-queue_list = ctk.CTkScrollableFrame(shift, fg_color="transparent", height=44, scrollbar_button_color=T.RULE, scrollbar_button_hover_color=T.MUTED)
+queue_list = ctk.CTkFrame(shift, fg_color="transparent")
 queue_list.pack(fill="x")
 start_q_btn = ctk.CTkButton(shift, text="Start the night shift", command=start_batch, height=40,
                             font=T.font(T.SANS, 13, "bold"), fg_color=T.INK, hover_color=T.MUTED, text_color=T.BG,
@@ -1267,7 +1302,7 @@ key_button(start_q_btn).pack(fill="x", pady=(12, 0))
 tape = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0)
 tape.grid(row=2, column=1, columnspan=2, sticky="ew")
 ctk.CTkFrame(tape, height=1, fg_color=T.RULE).pack(fill="x")
-log_box = ctk.CTkTextbox(root, height=120, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
+log_box = ctk.CTkTextbox(root, height=150, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
                          border_color=T.RULE, corner_radius=0, wrap="word", state="disabled")
 tape_row = ctk.CTkFrame(tape, fg_color="transparent")
 tape_row.pack(fill="x", padx=20, pady=10)
@@ -1286,6 +1321,32 @@ caption_btn = link_button(result_actions, "Copy caption", None, size=12)
 status_label = ctk.CTkLabel(tape_row, text="Ready.", width=1, font=T.font(T.SANS, 13), text_color=T.INK, anchor="w")
 status_label.pack(side="left", fill="x", expand=True)
 
+
+
+def reveal_focus(event):
+    """Tabbing to something below the fold scrolls it into view."""
+    widget = event.widget
+    if not isinstance(widget, tkinter.Misc) or not str(widget).startswith(str(panel_host)):
+        return
+    canvas = panel_host._parent_canvas
+    total = panel_host.winfo_height()
+    if total <= canvas.winfo_height():
+        return
+    top = widget.winfo_rooty() - panel_host.winfo_rooty()
+    seen_from = canvas.yview()[0] * total
+    if top < seen_from or top + widget.winfo_height() > seen_from + canvas.winfo_height():
+        canvas.yview_moveto(max(0, top - 40) / total)
+
+
+def close_app():
+    if busy and not messagebox.askyesno("Stop this video?", "A video is still being made. Closing ACE stops it. Close anyway?", parent=root):
+        return
+    stop_running()
+    root.destroy()
+
+
+root.bind_all("<FocusIn>", reveal_focus, add="+")
+root.protocol("WM_DELETE_WINDOW", close_app)
 panels = {"motion": MotionPanel(panel_host), "doc": DocPanel(panel_host), "reddit": RedditPanel(panel_host)}
 current_stages = STAGES["motion"]
 _paint_stages()
