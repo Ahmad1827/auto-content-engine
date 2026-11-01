@@ -1,6 +1,7 @@
-// The film-maker's two tools, run from inside a film's folder:
+// The film-maker's tools, run from inside a film's folder:
 //   node ../../scripts/film.mjs check [--at 1.2,3.4] [--strip 10,12,8]   Type-checks, renders stills at those seconds (default: start and middle
 //                                                                         of each beat) and writes one contact sheet to .check/sheet.jpg
+//   node ../../scripts/film.mjs motion [--every 1]                       Renders the film sparsely with no captions and reports stretches where the picture barely changes
 //   node ../../scripts/film.mjs terrain <west> <south> <east> <north>     Relief map of that box, for <ReliefMap>
 import {bundle} from '@remotion/bundler';
 import {makeCancelSignal, openBrowser, renderStill, selectComposition} from '@remotion/renderer';
@@ -85,6 +86,51 @@ async function check() {
   console.log(`Sheet: .check/sheet.jpg (${columns} across, left to right, then down)\nTimes: ${label}\n${perFrame.toFixed(1)}s per frame at 40% size`);
 }
 
+// Dead air is what makes an animated film feel like a slideshow, so this measures how much the picture really changes from moment to moment.
+async function motion() {
+  typecheck();
+  const end = data.beats.at(-1).start + data.beats.at(-1).duration;
+  const every = Number(option('every') ?? 1);
+  const times = Array.from({length: Math.floor(end / every)}, (_, i) => i * every);
+  const serveUrl = await bundle({entryPoint: path.join(FILM, 'index.ts'), publicDir: path.join(MOTION, 'public')});
+  const inputProps = {noCaptions: true};
+  const composition = await selectComposition({serveUrl, id: 'Film', inputProps});
+  const browser = await openBrowser('chrome');
+  const out = path.join(FILM, '.check', 'motion');
+  rmSync(out, {recursive: true, force: true});
+  mkdirSync(out, {recursive: true});
+  const small = [];
+  try {
+    for (const [i, t] of times.entries()) {
+      const output = path.join(out, `f${i}.jpg`);
+      const {cancelSignal} = makeCancelSignal();
+      await renderStill({composition, serveUrl, inputProps, frame: Math.round(t * data.fps), output, imageFormat: 'jpeg', jpegQuality: 70, scale: 0.2, puppeteerInstance: browser, cancelSignal, timeoutInMilliseconds: 120000, logLevel: 'error'});
+      small.push(execFileSync('ffmpeg', ['-v', 'error', '-i', output, '-vf', 'scale=54:96,format=gray', '-f', 'rawvideo', '-'], {maxBuffer: 1 << 20}));
+    }
+  } finally {
+    await browser.close({silent: true});
+  }
+  rmSync(out, {recursive: true, force: true});
+  const change = small.slice(1).map((f, i) => {
+    let sum = 0;
+    for (let p = 0; p < f.length; p++) sum += Math.abs(f[p] - small[i][p]);
+    return sum / f.length;
+  });
+  const STILL = 1.2;
+  const dead = [];
+  let from = null;
+  change.forEach((c, i) => {
+    if (c < STILL && from === null) from = i;
+    if ((c >= STILL || i === change.length - 1) && from !== null) {
+      const to = c < STILL ? i + 1 : i;
+      if ((to - from) * every >= 3) dead.push([from * every, to * every]);
+      from = null;
+    }
+  });
+  console.log(`Change per step: ${change.map((c) => c.toFixed(1)).join(' ')}`);
+  console.log(dead.length ? `DEAD AIR, nothing visibly changes: ${dead.map(([a, b]) => `${a}s-${b}s`).join(', ')}. Make something happen there, or move the camera with purpose.` : 'No dead air: the picture keeps changing.');
+}
+
 function terrain() {
   const box = rest.slice(0, 4);
   if (box.length !== 4 || box.some((v) => Number.isNaN(Number(v)))) {
@@ -100,9 +146,10 @@ function terrain() {
 }
 
 if (cmd === 'check') await check();
+else if (cmd === 'motion') await motion();
 else if (cmd === 'terrain') terrain();
 else {
-  console.error('Commands: check, terrain');
+  console.error('Commands: check, motion, terrain');
   process.exit(2);
 }
 process.exit(0);

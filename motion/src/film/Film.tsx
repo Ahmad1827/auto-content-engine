@@ -1,6 +1,6 @@
 import {loadFont as loadMontserrat} from '@remotion/google-fonts/Montserrat';
 import {createContext, useContext, useMemo} from 'react';
-import {AbsoluteFill, Audio, Composition, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Audio, Composition, getInputProps, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {localizeTheme} from '../language';
 import {THEMES} from '../theme';
 
@@ -54,10 +54,13 @@ export const Grade: React.FC<{warmth?: number; vignette?: number}> = ({warmth = 
   </>
 );
 
-export const Captions: React.FC<{top?: number | ((t: number) => number); size?: number}> = ({top = 1180, size = 62}) => {
+// `word` shows one big word at a time, `line` a calm sentence fragment, and `punch` (the default) groups with the current word on a bar. Pick what suits the film; `font`, `color` and `accent` match them to its look.
+export const Captions: React.FC<{top?: number | ((t: number) => number); size?: number; mode?: 'punch' | 'word' | 'line'; font?: string; color?: string; accent?: string; upper?: boolean; italic?: boolean}> = ({top = 1180, size, mode = 'punch', font: custom, color = '#fff', accent = '#c8102e', upper, italic}) => {
   const {words, font} = useFilm();
   const t = useTime();
   const groups = useMemo(() => {
+    if (mode === 'word') return words.map((w) => [w]);
+    const most = mode === 'line' ? 9 : 4;
     const out: Word[][] = [];
     let cur: Word[] = [];
     words.forEach((w, i) => {
@@ -66,25 +69,27 @@ export const Captions: React.FC<{top?: number | ((t: number) => number); size?: 
         cur = [];
       }
       cur.push(w);
-      if (cur.length >= 4 || /[.!?;:؟؛।。！？；：,،]$/.test(w.text)) {
+      if (cur.length >= most || /[.!?;:؟؛।。！？；：,،]$/.test(w.text)) {
         out.push(cur);
         cur = [];
       }
     });
     if (cur.length) out.push(cur);
     return out;
-  }, [words]);
+  }, [words, mode]);
+  if (getInputProps().noCaptions) return null;
   const group = groups.find((g, i) => t >= g[0].start && t < (groups[i + 1]?.[0].start ?? g[g.length - 1].end + 0.7));
   if (!group) return null;
   const y = typeof top === 'function' ? top(t) : top;
   const pop = Math.min(1, (t - group[0].start) * 12);
+  const punch = mode === 'punch';
   return (
-    <div style={{position: 'absolute', left: 90, right: 90, top: y, textAlign: 'center', fontFamily: font, fontWeight: 800, fontStyle: 'italic', textTransform: 'uppercase', fontSize: size, lineHeight: 1.2, color: '#fff', transform: `scale(${0.96 + 0.04 * pop})`,
+    <div style={{position: 'absolute', left: 90, right: 90, top: y, textAlign: 'center', fontFamily: custom ?? font, fontWeight: 800, fontStyle: italic ?? punch ? 'italic' : 'normal', textTransform: upper ?? punch ? 'uppercase' : 'none', fontSize: size ?? (mode === 'word' ? 76 : mode === 'line' ? 50 : 62), lineHeight: 1.2, color, transform: `scale(${(mode === 'word' ? 0.86 : 0.96) + (mode === 'word' ? 0.14 : 0.04) * pop})`,
       textShadow: '0 3px 0 #0b0b0d, 0 0 14px rgba(0,0,0,0.75)'}}>
       {group.map((w, i) => {
-        // The word being said sits on a red bar.
-        const now = t >= w.start && (i === group.length - 1 || t < group[i + 1].start);
-        return <span key={i}><span style={now ? {background: '#c8102e', borderRadius: 6, padding: '0 10px', margin: '0 -10px'} : undefined}>{w.text}</span>{' '}</span>;
+        // In punch mode, the word being said sits on a bar.
+        const now = punch && t >= w.start && (i === group.length - 1 || t < group[i + 1].start);
+        return <span key={i}><span style={now ? {background: accent, borderRadius: 6, padding: '0 10px', margin: '0 -10px'} : undefined}>{w.text}</span>{' '}</span>;
       })}
     </div>
   );

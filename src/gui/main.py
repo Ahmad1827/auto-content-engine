@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import tkinter
 import time
 
 import customtkinter as ctk
@@ -33,6 +34,7 @@ except ImportError:
 from shorts_gen.reddit import get_reddit_stories, format_story_for_tts
 from shorts_gen.editor import create_video as create_gameplay_video
 from llm.provider import describe_provider, generate
+from motion_gen.film import FORMATS, can_build_films
 from motion_gen.pipeline import OUTPUT_DIR, make_motion_video
 from motion_gen.narration import CHATTERBOX_VOICES, DEFAULT_PRESET, chatterbox_available
 
@@ -42,7 +44,13 @@ THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "cartoon"),
                  ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s"),
                  ("pixel", "Pixel", "8-bit"), ("diorama", "Diorama", "3D people"), ("film", "Film", "custom 3D")]
-STAGES = {"motion": ["Script", "Voice", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
+STORY_KINDS = {"AI picks": "auto", "Everyday and relatable": "relatable", "Escalating comedy": "escalation", "First person": "pov", "Documentary": "documentary",
+               "How it's made": "process", "Cross-section": "cutaway", "Journey on a map": "route"}
+LOG_LINES = 2000
+STAGES = {"motion": ["Script", "Voice", "Build", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
+
+CARD_WIDTH = 76
+QUEUE_MAX = 130
 
 BATCH_MODE = False
 batch_queue = []
@@ -172,28 +180,39 @@ def process_motion(task):
     """Motion-graphics TikTok: AI storyboard -> voice (Kokoro or Chatterbox) -> Remotion render."""
     script = task.get("script")
     subject = f"Turn this script into the video, keeping its wording:\n{script}" if script else task["topic"]
+    state = {"rendered": False, "built": 0}
 
     def log(msg):
         print(msg)
         m = re.match(r"\[(?:Voice|Chatterbox)\] Scene (\d+)/(\d+)", msg)
         if m:
             done, total = int(m[1]), int(m[2])
-            progress(15 + 30 * (done - 1) / total, "Voice", f"Voicing scene {done} of {total}...")
+            progress(10 + 15 * (done - 1) / total, "Voice", f"Voicing scene {done} of {total}...")
         elif msg.startswith("[Render] Rendered"):
             try:
                 done, total = msg.split()[2].strip(",").split("/")
-                progress(45 + 55 * int(done) / int(total), "Render", f"Rendering frame {done} of {total}...")
+                state["rendered"] = True
+                progress(65 + 33 * int(done) / int(total), "Render", f"Rendering frame {done} of {total}...")
             except (IndexError, ValueError):
                 pass
         elif msg.startswith("[Render] Rendering"):
-            progress(45, "Render", "Rendering the video...")
+            state["rendered"] = True
+            progress(65, "Render", "Rendering the video...")
         elif msg.startswith("[Film] "):
             text = msg.removeprefix("[Film] ")
-            progress(*((5, "Script") if text.startswith("Writing the film") else (45, "Render")), text)
+            if text.startswith("Writing the film"):
+                progress(5, "Script", text)
+            elif state["rendered"]:
+                # Saving reusable pieces comes after the render, so the bar doesn't go back.
+                progress(98, "Render", text)
+            else:
+                # The build has no known length, so the bar creeps towards the render as Claude works.
+                state["built"] = min(state["built"] + 0.4, 38)
+                progress(26 + state["built"], "Build", text)
 
     progress(3, "Script", "Writing the storyboard...")
     result = make_motion_video(subject, style=task["style"], voice=task["voice"], captions=task["captions"],
-                               handle=task["handle"], seconds=task["seconds"], log=log)
+                               handle=task["handle"], seconds=task["seconds"], film_format=task.get("film_format", "auto"), log=log)
     return result["video"], result["caption"]
 
 
@@ -315,6 +334,8 @@ def job_started(task):
     current_stages = STAGES[task["mode"]]
     if task["mode"] == "doc" and task.get("script"):
         current_stages = current_stages[1:]
+    if task["mode"] == "motion" and not can_build_films():
+        current_stages = [s for s in current_stages if s != "Build"]
     _paint_stages(current_stages[0])
     progress_bar.set(0)
     result_actions.pack_forget()
@@ -328,13 +349,13 @@ def job_done(video, caption):
     play_btn.configure(command=lambda: open_path(video))
     caption_btn.configure(command=lambda: copy_text(caption, "Caption copied."))
     caption_btn.pack_forget() if not caption else caption_btn.pack(side="left", padx=(6, 0))
-    result_actions.pack(side="right", padx=(10, 0))
+    result_actions.pack(side="right", padx=(10, 0), before=status_label)
     refresh_reel()
 
 
 def job_failed(message):
     progress_bar.set(0)
-    set_status(f"Failed: {message[:120]}", T.BAD)
+    set_status(f"Failed: {' '.join(message.split())[:120]}", T.BAD)
     show_log(True)
 
 
@@ -356,6 +377,27 @@ def copy_text(text, message):
 # ==========================================
 # WIDGET HELPERS
 # ==========================================
+def focusable(widget, activate, ring=None):
+    """Lets a widget be reached with Tab and used with Space or Enter. CustomTkinter's own widgets can't be."""
+    tkinter.Frame.configure(widget, takefocus=1)
+    ring = ring or widget
+
+    def show(on):
+        try:
+            if "border_width" in ring.__dict__ or hasattr(ring, "_border_width"):
+                if not hasattr(ring, "ace_border"):
+                    ring.ace_border = (ring.cget("border_color"), ring.cget("border_width"))
+                ring.configure(border_color=T.INK if on else ring.ace_border[0], border_width=2 if on else ring.ace_border[1])
+        except (ValueError, tkinter.TclError):
+            pass
+
+    widget.bind("<FocusIn>", lambda e: show(True), add="+")
+    widget.bind("<FocusOut>", lambda e: show(False), add="+")
+    for key in ("<space>", "<Return>"):
+        widget.bind(key, lambda e: (activate(), "break")[1], add="+")
+    return widget
+
+
 def section(parent, number, title, pady=(22, 10)):
     row = ctk.CTkFrame(parent, fg_color="transparent")
     row.pack(fill="x", pady=pady)
@@ -371,15 +413,19 @@ def entry(parent, placeholder="", width=140, size=14, height=38):
                         placeholder_text_color=T.MUTED, corner_radius=6)
 
 
+def key_button(button):
+    return focusable(button, lambda: button.invoke() if button.cget("state") != "disabled" else None)
+
+
 def ghost_button(parent, text, command, width=0, height=34):
-    return ctk.CTkButton(parent, text=text, command=command, width=width, height=height, font=T.font(T.SANS, 13, "bold"),
-                         fg_color="transparent", hover_color=T.FIELD_HOVER, border_width=1, border_color=T.RULE,
-                         text_color=T.INK, corner_radius=6)
+    return key_button(ctk.CTkButton(parent, text=text, command=command, width=width, height=height, font=T.font(T.SANS, 13, "bold"),
+                                    fg_color="transparent", hover_color=T.FIELD_HOVER, border_width=1, border_color=T.RULE,
+                                    text_color=T.INK, corner_radius=6))
 
 
 def link_button(parent, text, command, color=T.MUTED, size=12):
-    return ctk.CTkButton(parent, text=text, command=command, width=0, height=22, font=T.font(T.MONO, size),
-                         fg_color="transparent", hover_color=T.FIELD_HOVER, text_color=color, corner_radius=4)
+    return key_button(ctk.CTkButton(parent, text=text, command=command, width=0, height=22, font=T.font(T.MONO, size),
+                                    fg_color="transparent", hover_color=T.FIELD_HOVER, border_color=T.INK, text_color=color, corner_radius=4))
 
 
 def option_menu(parent, values, value, command=None, width=320):
@@ -389,6 +435,10 @@ def option_menu(parent, values, value, command=None, width=320):
                              dropdown_hover_color=T.FIELD_HOVER, dropdown_text_color=T.INK, corner_radius=6,
                              command=command, dynamic_resizing=False)
     menu.set(value if value in values else values[0])
+    # An option menu has no border to light up, so its text takes the accent colour when it has focus.
+    focusable(menu, menu._open_dropdown_menu)
+    menu.bind("<FocusIn>", lambda e: menu.configure(text_color=T.ACCENT), add="+")
+    menu.bind("<FocusOut>", lambda e: menu.configure(text_color=T.INK), add="+")
     return menu
 
 
@@ -441,9 +491,12 @@ class VoicePicker(ctk.CTkFrame):
 
 def switch(parent, text, value=True):
     var = ctk.BooleanVar(value=value)
-    ctk.CTkSwitch(parent, text=text, variable=var, font=T.font(T.SANS, 13), text_color=T.INK, progress_color=T.ACCENT,
-                  button_color=T.SURFACE, button_hover_color=T.FIELD, fg_color=T.RULE, switch_width=38,
-                  switch_height=20).pack(side="left", padx=(0, 22))
+    widget = ctk.CTkSwitch(parent, text=text, variable=var, font=T.font(T.SANS, 13), text_color=T.INK, progress_color=T.ACCENT,
+                           button_color=T.SURFACE, button_hover_color=T.FIELD, fg_color=T.RULE, switch_width=38, switch_height=20)
+    widget.pack(side="left", padx=(0, 22))
+    focusable(widget, widget.toggle)
+    widget.bind("<FocusIn>", lambda e: widget.configure(text_color=T.ACCENT), add="+")
+    widget.bind("<FocusOut>", lambda e: widget.configure(text_color=T.INK), add="+")
     return var
 
 
@@ -460,6 +513,7 @@ class Choice(ctk.CTkFrame):
             b = ctk.CTkButton(self, text=opt, width=0, height=30, font=T.font(T.MONO, size, "bold"), corner_radius=6,
                               command=lambda o=opt: self.set(o, notify=True))
             b.pack(side="left", padx=3, pady=3)
+            key_button(b)
             self.buttons[opt] = b
         self.set(value if value in options else options[0])
 
@@ -513,8 +567,9 @@ def pick_from_list(title, items, on_pick):
     """Small themed chooser window (trending topics, Reddit stories)."""
     win = ctk.CTkToplevel(root, fg_color=T.BG)
     win.title(title)
-    win.geometry("560x520")
+    win.geometry(f"560x{min(520, int(usable_size()[1] * 0.85))}")
     win.transient(root)
+    win.bind("<Escape>", lambda e: closed())
     ctk.CTkLabel(win, text=title, font=T.font(T.SERIF, 26), text_color=T.INK).pack(anchor="w", padx=24, pady=(20, 8))
     listing = ctk.CTkScrollableFrame(win, fg_color="transparent", scrollbar_button_color=T.RULE)
     listing.pack(fill="both", expand=True, padx=16, pady=(0, 16))
@@ -523,12 +578,18 @@ def pick_from_list(title, items, on_pick):
         win.destroy()
         on_pick(i)
 
+    def closed():
+        win.destroy()
+        if not BATCH_MODE:
+            set_busy(False)
+
     for i, text in enumerate(items):
-        ctk.CTkButton(listing, text=text, anchor="w", height=40, font=T.font(T.SANS, 13), fg_color=T.SURFACE,
+        option = ctk.CTkButton(listing, text=text[:90], anchor="w", height=40, font=T.font(T.SANS, 13), fg_color=T.SURFACE,
                       hover_color=T.FIELD_HOVER, text_color=T.INK, corner_radius=6,
-                      command=lambda i=i: choose(i)).pack(fill="x", pady=3, padx=4)
+                      command=lambda i=i: choose(i), border_color=T.INK)
+        key_button(option).pack(fill="x", pady=3, padx=4)
     win.after(150, lambda: (win.lift(), win.focus_force()))
-    win.protocol("WM_DELETE_WINDOW", lambda: (win.destroy(), set_busy(False)) if not BATCH_MODE else win.destroy())
+    win.protocol("WM_DELETE_WINDOW", closed)
     return win
 
 
@@ -537,7 +598,7 @@ def pick_from_list(title, items, on_pick):
 # ==========================================
 class MotionPanel(ctk.CTkFrame):
     kicker, title = "MOTION GRAPHICS", "What's the story?"
-    blurb = "One moment from history or faith. The AI writes it, a voice tells it, maps and line art animate it."
+    blurb = "Any story, in any look. Claude Code writes it and animates it from scratch: about 20 to 60 minutes a video."
     make_text, busy_text = "Make the video  →", "Working on it..."
 
     def __init__(self, parent):
@@ -554,16 +615,24 @@ class MotionPanel(ctk.CTkFrame):
             placeholder_text="Title for the file (optional)" if on else "e.g. the Dancing Plague of 1518"))
 
         section(self, "02", "Look")
-        cards = ctk.CTkFrame(self, fg_color="transparent")
-        cards.pack(fill="x")
+        self.card_row = ctk.CTkFrame(self, fg_color="transparent")
+        self.card_row.pack(fill="x")
         self.cards = {}
+        self.card_columns = 0
         self.style = settings.get("motion_style", "auto")
-        # Equal columns, so that every card fits the row.
-        for i, (key, name, note) in enumerate(MOTION_STYLES):
-            cards.grid_columnconfigure(i, weight=1, uniform="card")
-            self.cards[key] = self._card(cards, key, name, note)
-            self.cards[key].grid(row=0, column=i, sticky="nsew", padx=(0, 5))
+        for key, name, note in MOTION_STYLES:
+            self.cards[key] = self._card(self.card_row, key, name, note)
+        self._lay_out_cards(len(MOTION_STYLES))
+        self.card_row.bind("<Configure>", self._cards_resized)
         self.pick_style(self.style)
+        if can_build_films():
+            row = ctk.CTkFrame(self, fg_color="transparent")
+            row.pack(fill="x", pady=(12, 0))
+            ctk.CTkLabel(row, text="Kind of story", font=T.font(T.MONO, 11), text_color=T.MUTED).pack(side="left", padx=(0, 12))
+            self.story_kind = option_menu(row, list(STORY_KINDS), settings.get("motion_story", "AI picks"), lambda v: save_settings(motion_story=v), width=240)
+            self.story_kind.pack(side="left")
+        else:
+            self.story_kind = None
 
         section(self, "03", "Voice")
         hint = "" if chatterbox_available() else "Chatterbox (the natural free voice) isn't installed; see the README."
@@ -575,21 +644,37 @@ class MotionPanel(ctk.CTkFrame):
         row.pack(fill="x")
         self.seconds = ctk.IntVar(value=settings.get("motion_seconds", 60))
         self.seconds_label = ctk.CTkLabel(row, text="", width=64, anchor="w", font=T.font(T.SERIF, 26), text_color=T.INK)
-        ctk.CTkSlider(row, from_=20, to=90, number_of_steps=14, variable=self.seconds, width=220, height=16,
+        ctk.CTkSlider(row, from_=20, to=90, number_of_steps=14, variable=self.seconds, width=170, height=16,
                       progress_color=T.ACCENT, button_color=T.INK, button_hover_color=T.ACCENT, fg_color=T.RULE,
                       command=lambda v: self._seconds_changed()).pack(side="left", padx=(0, 14))
-        self.seconds_label.pack(side="left", padx=(0, 26))
+        self.seconds_label.pack(side="left", padx=(0, 14))
         self._seconds_changed()
         self.captions = switch(row, "Captions", settings.get("motion_captions", True))
-        self.handle = entry(row, "@yourhandle", width=150)
+        self.handle = entry(row, "@yourhandle", width=130)
         self.handle.pack(side="left")
         if settings.get("handle"):
             self.handle.insert(0, settings["handle"])
 
         actions(self)
 
+    def _lay_out_cards(self, columns):
+        """Equal columns, so that every card fits; they wrap onto more rows when the window is narrow."""
+        if columns == self.card_columns:
+            return
+        self.card_columns = columns
+        for i in range(len(MOTION_STYLES)):
+            self.card_row.grid_columnconfigure(i, weight=1 if i < columns else 0, uniform="card" if i < columns else "")
+        for i, card in enumerate(self.cards.values()):
+            card.grid(row=i // columns, column=i % columns, sticky="nsew", padx=(0, 5), pady=(0, 5))
+
+    def _cards_resized(self, event):
+        width = event.width / ctk.ScalingTracker.get_widget_scaling(self)
+        if width > 1:
+            self._lay_out_cards(max(3, min(len(MOTION_STYLES), int(width // CARD_WIDTH))))
+
     def _card(self, parent, key, name, note):
         card = ctk.CTkFrame(parent, fg_color=T.SURFACE, corner_radius=8, border_width=2, border_color=T.RULE, cursor="hand2")
+        focusable(card, lambda k=key: self.pick_style(k))
         thumb_path = os.path.join(ROOT, "assets", "ui", f"style_{key}.jpg")
         if os.path.exists(thumb_path):
             img = ctk.CTkImage(Image.open(thumb_path), size=(60, 106))
@@ -657,7 +742,8 @@ class MotionPanel(ctk.CTkFrame):
         save_settings(handle=handle, motion_seconds=self.seconds.get(), motion_captions=self.captions.get())
         return {"mode": "motion", "topic": topic or "Manual_Video", "script": script, "style": self.style,
                 "voice": self.voice.preset(), "seconds": self.seconds.get(), "captions": self.captions.get(),
-                "handle": handle, "label": f"Motion · {topic or 'own script'}"}
+                "handle": handle, "film_format": STORY_KINDS[self.story_kind.get()] if self.story_kind else "auto",
+                "label": f"Motion · {topic or 'own script'}"}
 
     def make(self):
         task = self.task()
@@ -708,9 +794,9 @@ class DocPanel(ctk.CTkFrame):
             e.insert(0, default)
             e.grid(row=1, column=col, sticky="w", padx=(0, 14))
             self.fields[key] = e
-        ctk.CTkLabel(grid, text="Image keywords", font=T.font(T.MONO, 11), text_color=T.MUTED).grid(row=0, column=3, sticky="w")
-        self.keywords = entry(grid, "optional", width=200)
-        self.keywords.grid(row=1, column=3, sticky="w")
+        ctk.CTkLabel(grid, text="Image keywords", font=T.font(T.MONO, 11), text_color=T.MUTED).grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.keywords = entry(grid, "optional", width=358)
+        self.keywords.grid(row=3, column=0, columnspan=3, sticky="w")
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", pady=(14, 0))
         self.do_web = switch(row, "Web images")
@@ -842,13 +928,13 @@ class RedditPanel(ctk.CTkFrame):
 def actions(panel, queue_hint=""):
     row = ctk.CTkFrame(panel, fg_color="transparent")
     row.pack(fill="x", pady=(34, 0))
-    panel.make_btn = ctk.CTkButton(row, text=panel.make_text, command=panel.make, width=250, height=54,
+    panel.make_btn = ctk.CTkButton(row, text=panel.make_text, command=panel.make, width=210, height=54,
                                    font=T.font(T.SANS, 16, "bold"), fg_color=T.ACCENT, hover_color=T.ACCENT_HOVER,
-                                   text_color=T.ON_ACCENT, text_color_disabled=T.ON_ACCENT, corner_radius=8)
-    panel.make_btn.pack(side="left")
-    ghost_button(row, "+ Add to night shift", lambda: add_to_queue(panel), width=190, height=54).pack(side="left", padx=(12, 0))
+                                   text_color=T.ON_ACCENT, text_color_disabled=T.ON_ACCENT, border_color=T.INK, corner_radius=8)
+    key_button(panel.make_btn).pack(side="left")
+    ghost_button(row, "+ Add to night shift", lambda: add_to_queue(panel), width=170, height=54).pack(side="left", padx=(12, 0))
     if queue_hint:
-        ctk.CTkLabel(row, text=queue_hint, font=T.font(T.MONO, 11), text_color=T.MUTED).pack(side="left", padx=(14, 0))
+        ctk.CTkLabel(panel, text=queue_hint, font=T.font(T.MONO, 11), text_color=T.MUTED).pack(anchor="w", pady=(8, 0))
 
 
 # ==========================================
@@ -879,6 +965,7 @@ def refresh_queue():
     for w in queue_list.winfo_children():
         w.destroy()
     queue_count.configure(text=f"{len(batch_queue):02d}")
+    queue_list.configure(height=min(QUEUE_MAX, max(44, len(batch_queue) * 30)))
     if not batch_queue:
         ctk.CTkLabel(queue_list, text="Nothing queued. Line up videos,\nstart the shift, go to sleep.",
                      font=T.font(T.MONO, 11), text_color=T.MUTED, justify="left").pack(anchor="w", pady=4)
@@ -887,9 +974,9 @@ def refresh_queue():
         row = ctk.CTkFrame(queue_list, fg_color="transparent")
         row.pack(fill="x", pady=1)
         ctk.CTkLabel(row, text=f"{i + 1:02d}", font=T.font(T.MONO, 11, "bold"), text_color=T.ACCENT).pack(side="left")
-        ctk.CTkLabel(row, text=task["label"][:34], font=T.font(T.SANS, 12), text_color=T.INK, anchor="w").pack(side="left", padx=8)
         if not BATCH_MODE:
             link_button(row, "×", lambda i=i: remove_from_queue(i), size=14).pack(side="right")
+        ctk.CTkLabel(row, text=task["label"][:30], font=T.font(T.SANS, 12), text_color=T.INK, anchor="w").pack(side="left", padx=8)
 
 
 def _prettify(stem):
@@ -977,7 +1064,7 @@ def _draw_reel(videos):
         art.pack(side="left", anchor="n")
         info = ctk.CTkFrame(row, fg_color="transparent")
         info.pack(side="left", fill="x", expand=True, padx=(12, 0), anchor="n")
-        title = ctk.CTkLabel(info, text=v["title"], font=T.font(T.SERIF, 16), text_color=T.INK, wraplength=210,
+        title = ctk.CTkLabel(info, text=v["title"], font=T.font(T.SERIF, 16), text_color=T.INK, wraplength=170,
                              justify="left", anchor="w")
         title.pack(anchor="w")
         meta = [f"{int(v['duration'])}s" if v.get("duration") else None, v["style"],
@@ -1012,6 +1099,10 @@ class RedirectText:
     def _write(self, string):
         log_box.configure(state="normal")
         log_box.insert("end", string, self.tag)
+        # Only the newest lines stay on screen, so that a long job can't slow the window down.
+        extra = int(log_box.index("end-1c").split(".")[0]) - LOG_LINES
+        if extra > 0:
+            log_box.delete("1.0", f"{extra + 1}.0")
         log_box.see("end")
         log_box.configure(state="disabled")
 
@@ -1022,12 +1113,11 @@ class RedirectText:
 
 def show_log(force=None):
     visible = not log_box.winfo_ismapped() if force is None else force
-    # Floats over the bottom of the window instead of squeezing the form.
+    # It takes its own row and covers nothing: the form above scrolls.
     if visible:
-        log_box.place(in_=tape, x=0, y=-230, relwidth=1)
-        log_box.lift()
+        log_box.grid(row=1, column=1, columnspan=2, sticky="ew")
     else:
-        log_box.place_forget()
+        log_box.grid_remove()
     log_btn.configure(text="Hide log ▾" if visible else "Show log ▴")
 
 
@@ -1050,6 +1140,7 @@ def switch_mode(key):
     title_l.configure(text=panel.title)
     blurb_l.configure(text=panel.blurb)
     panel.pack(fill="both", expand=True)
+    panel_host._parent_canvas.yview_moveto(0)
     save_settings(mode=key)
 
 
@@ -1069,22 +1160,32 @@ ctk.set_appearance_mode(settings.get("appearance", "dark"))
 
 root = ctk.CTk(fg_color=T.BG)
 root.title("ACE · Auto Content Engine")
-root.geometry("1360x880")
-root.minsize(1300, 820)
+
+
+def usable_size():
+    """The screen in the same units as window sizes, which differ on a scaled display."""
+    scale = ctk.ScalingTracker.get_window_scaling(root)
+    return root.winfo_screenwidth() / scale, root.winfo_screenheight() / scale
+
+
+# Opens as large as it likes on a big screen and fits a small or scaled one: anything taller than the window scrolls.
+screen_w, screen_h = usable_size()
+root.geometry(f"{int(min(1360, screen_w - 40))}x{int(min(880, screen_h - 90))}")
+root.minsize(int(min(1120, screen_w - 40)), int(min(640, screen_h - 90)))
 root.grid_columnconfigure(1, weight=1)
 root.grid_rowconfigure(0, weight=1)
 
 # --- Sidebar (the slate) ---
-side = ctk.CTkFrame(root, fg_color=T.SLATE, corner_radius=0, width=230)
-side.grid(row=0, column=0, rowspan=2, sticky="nsw")
+side = ctk.CTkFrame(root, fg_color=T.SLATE, corner_radius=0, width=210)
+side.grid(row=0, column=0, rowspan=3, sticky="nsw")
 side.pack_propagate(False)
-ctk.CTkLabel(side, text="ACE", font=T.font(T.SERIF, 54), text_color=T.SLATE_INK).pack(anchor="w", padx=26, pady=(26, 0))
+ctk.CTkLabel(side, text="ACE", font=T.font(T.SERIF, 48), text_color=T.SLATE_INK).pack(anchor="w", padx=26, pady=(18, 0))
 ctk.CTkLabel(side, text="AUTO CONTENT ENGINE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w", padx=28)
-ctk.CTkFrame(side, height=1, fg_color=("#3A352F", "#2A2723")).pack(fill="x", padx=26, pady=(22, 16))
+ctk.CTkFrame(side, height=1, fg_color=("#3A352F", "#2A2723")).pack(fill="x", padx=26, pady=(16, 12))
 ctk.CTkLabel(side, text="MAKE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w", padx=28, pady=(0, 6))
 
 mode_buttons = {}
-for key, name, note in [("motion", "Motion graphics", "maps · line art · counters"),
+for key, name, note in [("motion", "Motion graphics", "every style, from scratch"),
                         ("doc", "Documentary", "stock + AI images"),
                         ("reddit", "Reddit story", "over gameplay")]:
     btn = ctk.CTkFrame(side, fg_color="transparent", corner_radius=6, cursor="hand2")
@@ -1099,10 +1200,13 @@ for key, name, note in [("motion", "Motion graphics", "maps · line art · count
     note_l.pack(anchor="w")
     for w in (btn, btn.bar, text, btn.title_l, note_l):
         w.bind("<Button-1>", lambda e, k=key: switch_mode(k))
+    focusable(btn, lambda k=key: switch_mode(k), ring=btn.bar)
+    btn.bind("<FocusIn>", lambda e, b=btn: b.title_l.configure(text_color=T.SLATE_INK), add="+")
+    root.bind(f"<Control-Key-{len(mode_buttons) + 1}>", lambda e, k=key: switch_mode(k))
     mode_buttons[key] = btn
 
 side_bottom = ctk.CTkFrame(side, fg_color="transparent")
-side_bottom.pack(side="bottom", fill="x", padx=26, pady=24)
+side_bottom.pack(side="bottom", fill="x", padx=22, pady=16)
 ctk.CTkLabel(side_bottom, text="ENGINE", font=T.font(T.MONO, 10, "bold"), text_color=T.SLATE_MUTED).pack(anchor="w")
 ai_status = ctk.CTkLabel(side_bottom, text="●  detecting AI...", font=T.font(T.MONO, 11), text_color=T.SLATE_MUTED, anchor="w")
 ai_status.pack(anchor="w", pady=(4, 0))
@@ -1114,23 +1218,24 @@ Choice(side_bottom, ["LIGHT", "DARK"], settings.get("appearance", "dark").upper(
 
 # --- Main column ---
 main = ctk.CTkFrame(root, fg_color="transparent")
-main.grid(row=0, column=1, sticky="nsew", padx=(44, 20), pady=(30, 0))
+main.grid(row=0, column=1, sticky="nsew", padx=(28, 8), pady=(18, 0))
 kicker_l = ctk.CTkLabel(main, text="", font=T.font(T.MONO, 11, "bold"), text_color=T.ACCENT)
 kicker_l.pack(anchor="w")
-title_l = ctk.CTkLabel(main, text="", font=T.font(T.SERIF, 46), text_color=T.INK)
+title_l = ctk.CTkLabel(main, text="", font=T.font(T.SERIF, 38), text_color=T.INK)
 title_l.pack(anchor="w", pady=(0, 0))
-blurb_l = ctk.CTkLabel(main, text="", font=T.font(T.SANS, 14), text_color=T.MUTED, wraplength=640, justify="left")
-blurb_l.pack(anchor="w", pady=(0, 24))
-panel_host = ctk.CTkFrame(main, fg_color="transparent")
+blurb_l = ctk.CTkLabel(main, text="", font=T.font(T.SANS, 14), text_color=T.MUTED, wraplength=520, justify="left")
+blurb_l.pack(anchor="w", pady=(0, 12))
+panel_host = ctk.CTkScrollableFrame(main, fg_color="transparent", scrollbar_button_color=T.RULE, scrollbar_button_hover_color=T.MUTED)
 panel_host.pack(fill="both", expand=True)
+main.bind("<Configure>", lambda e: blurb_l.configure(wraplength=max(320, e.width / ctk.ScalingTracker.get_widget_scaling(main) - 30)))
 
 # --- Right rail ---
-rail = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0, width=360)
+rail = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0, width=310)
 rail.grid(row=0, column=2, sticky="nse")
 rail.pack_propagate(False)
 ctk.CTkFrame(rail, width=1, fg_color=T.RULE).pack(side="left", fill="y")
 rail_inner = ctk.CTkFrame(rail, fg_color="transparent")
-rail_inner.pack(side="left", fill="both", expand=True, padx=(22, 14), pady=(30, 0))
+rail_inner.pack(side="left", fill="both", expand=True, padx=(16, 10), pady=(18, 0))
 
 reel_head = ctk.CTkFrame(rail_inner, fg_color="transparent")
 reel_head.pack(fill="x")
@@ -1139,10 +1244,11 @@ link_button(reel_head, "open folder", lambda: open_path(OUTPUT_DIR if os.path.is
 ctk.CTkFrame(rail_inner, height=1, fg_color=T.RULE).pack(fill="x", pady=(8, 12))
 reel_list = ctk.CTkScrollableFrame(rail_inner, fg_color="transparent", scrollbar_button_color=T.RULE,
                                    scrollbar_button_hover_color=T.MUTED)
-reel_list.pack(fill="both", expand=True)
 
+# Packed before the reel, so that the reel gives up room and the night shift always fits.
 shift = ctk.CTkFrame(rail_inner, fg_color="transparent")
-shift.pack(fill="x", pady=(12, 18))
+shift.pack(side="bottom", fill="x", pady=(12, 14))
+reel_list.pack(fill="both", expand=True)
 shift_head = ctk.CTkFrame(shift, fg_color="transparent")
 shift_head.pack(fill="x")
 ctk.CTkLabel(shift_head, text="Night shift", font=T.font(T.SERIF, 26), text_color=T.INK).pack(side="left")
@@ -1150,25 +1256,25 @@ queue_count = ctk.CTkLabel(shift_head, text="00", font=T.font(T.MONO, 12, "bold"
 queue_count.pack(side="left", padx=10, pady=(6, 0))
 link_button(shift_head, "clear", clear_queue, size=11).pack(side="right")
 ctk.CTkFrame(shift, height=1, fg_color=T.RULE).pack(fill="x", pady=(8, 10))
-queue_list = ctk.CTkFrame(shift, fg_color="transparent")
+queue_list = ctk.CTkScrollableFrame(shift, fg_color="transparent", height=44, scrollbar_button_color=T.RULE, scrollbar_button_hover_color=T.MUTED)
 queue_list.pack(fill="x")
 start_q_btn = ctk.CTkButton(shift, text="Start the night shift", command=start_batch, height=40,
                             font=T.font(T.SANS, 13, "bold"), fg_color=T.INK, hover_color=T.MUTED, text_color=T.BG,
-                            text_color_disabled=T.BG, corner_radius=8)
-start_q_btn.pack(fill="x", pady=(12, 0))
+                            text_color_disabled=T.BG, border_color=T.ACCENT, corner_radius=8)
+key_button(start_q_btn).pack(fill="x", pady=(12, 0))
 
 # --- Bottom tape: stages, progress, status, log ---
 tape = ctk.CTkFrame(root, fg_color=T.SURFACE, corner_radius=0)
-tape.grid(row=1, column=1, columnspan=2, sticky="ew")
+tape.grid(row=2, column=1, columnspan=2, sticky="ew")
 ctk.CTkFrame(tape, height=1, fg_color=T.RULE).pack(fill="x")
 log_box = ctk.CTkTextbox(root, height=230, font=T.font(T.MONO, 11), fg_color=T.FIELD, text_color=T.INK, border_width=1,
                          border_color=T.RULE, corner_radius=0, wrap="word", state="disabled")
 tape_row = ctk.CTkFrame(tape, fg_color="transparent")
-tape_row.pack(fill="x", padx=28, pady=12)
+tape_row.pack(fill="x", padx=20, pady=10)
 stage_frame = ctk.CTkFrame(tape_row, fg_color="transparent")
 stage_frame.pack(side="left")
-progress_bar = ctk.CTkProgressBar(tape_row, height=6, width=180, corner_radius=3, progress_color=T.ACCENT, fg_color=T.RULE)
-progress_bar.pack(side="left", padx=18)
+progress_bar = ctk.CTkProgressBar(tape_row, height=6, width=120, corner_radius=3, progress_color=T.ACCENT, fg_color=T.RULE)
+progress_bar.pack(side="left", padx=12)
 progress_bar.set(0)
 log_btn = link_button(tape_row, "Show log ▴", lambda: show_log(), size=11)
 log_btn.pack(side="right")
@@ -1176,7 +1282,8 @@ result_actions = ctk.CTkFrame(tape_row, fg_color="transparent")
 play_btn = link_button(result_actions, "▶ Play", None, T.ACCENT, 12)
 play_btn.pack(side="left")
 caption_btn = link_button(result_actions, "Copy caption", None, size=12)
-status_label = ctk.CTkLabel(tape_row, text="Ready.", font=T.font(T.SANS, 13), text_color=T.INK, anchor="w")
+# width=1: a long message gets cut off at the edge rather than pushing the buttons out of the window.
+status_label = ctk.CTkLabel(tape_row, text="Ready.", width=1, font=T.font(T.SANS, 13), text_color=T.INK, anchor="w")
 status_label.pack(side="left", fill="x", expand=True)
 
 panels = {"motion": MotionPanel(panel_host), "doc": DocPanel(panel_host), "reddit": RedditPanel(panel_host)}

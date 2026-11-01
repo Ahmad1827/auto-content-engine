@@ -50,6 +50,9 @@ const LYING = {hips: [0, -0.8, 0] as V3, plant: false};
 // Flat out, toes falling gently outward.
 const LEGS_OUT = {foot_l: {at: [0.14, 0.13, 0.88] as V3, toes: 62}, foot_r: {at: [-0.14, 0.13, 0.88] as V3, toes: 62}};
 
+// Alternating leg kicks, for an Actor's `pose` prop.
+export const flutterKick = (rate = 7, amount = 13) => (t: number) => ({thigh_l: [Math.sin(t * rate) * amount, 0, 0] as [number, number, number], thigh_r: [-Math.sin(t * rate) * amount, 0, 0] as [number, number, number]});
+
 export const POSES = {
   stand: {},
   // Standing, and feeling something about it.
@@ -73,6 +76,8 @@ export const POSES = {
   // Feet straight out in front on whatever they're sat on, with the actor's position at the pelvis: for the floor or a mattress.
   sitLegsOut: {...LYING, bend: [6, 0, 0], foot_l: {at: [0.13, 0.1, 0.88], toes: 75}, foot_r: {at: [-0.13, 0.1, 0.88], toes: 75}, ...hands('pelvis', [0.2, 0.08, 0.2], [0.8, -0.1, -0.7], [0, -0.1, 1], [0, -1, 0])},
   // Flat on whatever they lie on, with the actor's position under the pelvis. The head is towards -z and the feet towards +z.
+  // Flat and face down in the water, arms reaching ahead. Add `pose={flutterKick()}` on the Actor for the legs.
+  swim: {hips: [0, -0.8, 0], plant: false, body: [86, 0, 0], head: [-34, 0, 0], ...hands('spine_03', [0.2, 0.7, 0.16], [1, -0.1, -0.2], [0, 1, 0.1], [0, 0, 1]), grip_l: 0.05, grip_r: 0.05},
   lieBack: {...LYING, ...LEGS_OUT, body: [-90, 0, 0]},
   lieBackHandsOnChest: {...LYING, ...LEGS_OUT, body: [-90, 0, 0], ...hands('spine_02', [0.19, 0.04, 0.19], [1, 0.1, -0.3], [-1, 0.15, 0], [0, 0, -1]), grip_l: 0.15, grip_r: 0.15},
   lieSideLeft: {...LYING, hips: [0, -0.74, 0], body: [-90, 90, 0], foot_l: {on: 'pelvis', at: [0.1, -0.76, 0.1]}, foot_r: {on: 'pelvis', at: [-0.1, -0.76, 0.28]}},

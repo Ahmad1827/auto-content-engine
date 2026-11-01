@@ -4,8 +4,8 @@ import {createContext, useContext} from 'react';
 import {getInputProps, useCurrentFrame, useVideoConfig} from 'remotion';
 import * as THREE from 'three';
 import {loadActorAssets} from './Actor';
-import {type Shot, viewAt, type View} from './camera';
-import {Grade} from './Film';
+import {type Shot, toScreen, viewAt, type View} from './camera';
+import {Grade, useFilm} from './Film';
 import {softDisc, useLoaded} from './rig';
 
 const ViewContext = createContext<View | null>(null);
@@ -24,8 +24,8 @@ const Rig: React.FC<{view: View}> = ({view}) => {
   return null;
 };
 
-const MIN_SHOT = 2;
-const MIN_AVERAGE = 3.5;
+const MIN_SHOT = 1.2;
+const MIN_AVERAGE = 2.8;
 
 // Rapid cutting is what makes a film hard to follow, so `film.mjs check` refuses it. Finished films always render.
 function checkPacing(shots: Shot[], end: number) {
@@ -38,6 +38,53 @@ function checkPacing(shots: Shot[], end: number) {
   if (end / times.length < MIN_AVERAGE) throw new Error(`PACING: ${times.length} shots in ${end.toFixed(1)}s averages ${(end / times.length).toFixed(2)}s. Average at least ${MIN_AVERAGE}s: at most ${Math.floor(end / MIN_AVERAGE)} shots.`);
 }
 
+// A label pinned to a place in the world, which stays on it while the camera moves. With `from` it's a measured span between two points; without, a callout on one point.
+export type Note = {at: number; until: number; to: [number, number, number]; from?: [number, number, number]; text: string; color?: string; size?: number; lift?: number};
+
+const Notes: React.FC<{notes: Note[]; view: View; t: number; width: number; height: number}> = ({notes, view, t, width, height}) => {
+  const {font} = useFilm();
+  return (
+    <svg width={width} height={height} style={{position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none'}}>
+      {notes.filter((n) => t >= n.at && t < n.until).map((n, i) => {
+        const a = Math.min(1, (t - n.at) * 7) * Math.min(1, (n.until - t) * 7);
+        const color = n.color ?? '#ffd76a';
+        const size = n.size ?? 40;
+        const end = toScreen(view, n.to, width, height);
+        if (!end) return null;
+        const label = (x: number, y: number) => {
+          const half = (n.text.length * size * 0.32) + 12;
+          const cx = Math.min(width - half - 20, Math.max(half + 20, x));
+          return <text x={cx} y={y} textAnchor="middle" fontFamily={font} fontWeight={800} fontSize={size} fill={color} stroke="#0b0b0d" strokeWidth={8} paintOrder="stroke fill">{n.text}</text>;
+        };
+        if (n.from) {
+          const start = toScreen(view, n.from, width, height);
+          if (!start) return null;
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const [nx, ny] = [(-dy / len) * 16, (dx / len) * 16];
+          const shown = Math.min(1, (t - n.at) * 3);
+          const q = {x: start.x + dx * shown, y: start.y + dy * shown};
+          return (
+            <g key={i} opacity={a}>
+              <path d={`M${start.x + nx} ${start.y + ny}L${start.x - nx} ${start.y - ny}M${start.x} ${start.y}L${q.x} ${q.y}M${q.x + nx} ${q.y + ny}L${q.x - nx} ${q.y - ny}`} stroke={color} strokeWidth={5} strokeLinecap="round" fill="none" />
+              {label((start.x + end.x) / 2, (start.y + end.y) / 2 + (n.lift ?? 52))}
+            </g>
+          );
+        }
+        const lift = n.lift ?? 110;
+        return (
+          <g key={i} opacity={a}>
+            <circle cx={end.x} cy={end.y} r={9} fill={color} stroke="#0b0b0d" strokeWidth={3} />
+            <path d={`M${end.x} ${end.y}L${end.x} ${end.y - lift * Math.min(1, (t - n.at) * 6)}`} stroke={color} strokeWidth={4} />
+            {label(end.x, end.y - lift - 14)}
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
 // The whole 3D world of the film. Keep one Stage and one world, and cut between shots by listing cameras, so places stay consistent.
 export const Stage: React.FC<{
   shots: Shot[];
@@ -48,22 +95,58 @@ export const Stage: React.FC<{
   shadows?: boolean;
   // The finish over the picture: warmth 0 to about 0.25, darker corners 0 to about 0.6. Pass false to go without.
   grade?: {warmth?: number; vignette?: number} | false;
-}> = ({shots, children, background = '#9fd0ef', fog, shadows = true, grade = {}}) => {
+  // Labels pinned to the world.
+  notes?: Note[];
+  // Moments the camera feels a heavy landing. Strength 1 is a soft jolt; pass [time, strength] to vary it.
+  bumps?: (number | [number, number])[];
+  // Even a locked-off camera breathes very slightly, so that no frame is dead. 0 turns this off.
+  drift?: number;
+  // Renders the 3D at 1/n resolution with hard square pixels: 3D that looks like pixel art. About 5-8 suits a phone. `colors` limits each channel to that many levels, for an 8-bit palette.
+  pixels?: number;
+  colors?: number;
+}> = ({shots, children, background = '#9fd0ef', fog, shadows = true, grade = {}, notes, bumps, drift = 1, pixels, colors}) => {
   const frame = useCurrentFrame();
   const {fps, durationInFrames, width, height} = useVideoConfig();
-  const view = viewAt(shots, frame / fps, durationInFrames / fps);
+  const t = frame / fps;
+  const view = viewAt(shots, t, durationInFrames / fps);
+  const reach = view.pos.distanceTo(view.look);
+  if (drift) {
+    view.pos.x += Math.sin(t * 0.31 + 1) * reach * 0.012 * drift;
+    view.pos.y += Math.sin(t * 0.23 + 2) * reach * 0.007 * drift;
+    view.pos.z += Math.sin(t * 0.19) * reach * 0.01 * drift;
+  }
+  for (const b of bumps ?? []) {
+    const [at, power] = typeof b === 'number' ? [b, 1] : b;
+    const since = t - at;
+    if (since >= 0 && since < 0.45) {
+      const jolt = Math.exp(-since * 10) * Math.cos(since * 34) * reach * 0.006 * power;
+      view.pos.y -= jolt;
+      view.look.y -= jolt * 0.7;
+    }
+  }
   if (getInputProps().filmCheck) checkPacing(shots, durationInFrames / fps);
   const ready = useLoaded(loadActorAssets, 'characters');
   if (!ready) return null;
-  return (
-    <>
-    <ThreeCanvas width={width} height={height} shadows={shadows} gl={{preserveDrawingBuffer: true}} camera={{fov: view.fov, near: 0.05, far: 2000, position: view.pos.toArray()}}>
+  const n = pixels && pixels > 1 ? Math.round(pixels) : 1;
+  const levels = colors ? Array.from({length: colors}, (_, i) => (i / (colors - 1)).toFixed(3)).join(' ') : '';
+  const canvas = (
+    <ThreeCanvas width={Math.round(width / n)} height={Math.round(height / n)} shadows={shadows} gl={{preserveDrawingBuffer: true, antialias: n === 1}} camera={{fov: view.fov, near: 0.05, far: 2000, position: view.pos.toArray()}}>
       <Rig view={view} />
       <color attach="background" args={[background]} />
       {fog && <fog attach="fog" args={fog} />}
       <ViewContext.Provider value={view}>{children}</ViewContext.Provider>
     </ThreeCanvas>
+  );
+  return (
+    <>
+    {n === 1 && !colors ? canvas : (
+      <div style={{position: 'absolute', left: 0, top: 0, width: Math.round(width / n), height: Math.round(height / n), transformOrigin: '0 0', transform: `scale(${n})`, imageRendering: 'pixelated', filter: colors ? 'url(#stagePalette)' : undefined}}>
+        {colors && <svg width="0" height="0" style={{position: 'absolute'}}><filter id="stagePalette" colorInterpolationFilters="sRGB"><feComponentTransfer><feFuncR type="discrete" tableValues={levels} /><feFuncG type="discrete" tableValues={levels} /><feFuncB type="discrete" tableValues={levels} /></feComponentTransfer></filter></svg>}
+        {canvas}
+      </div>
+    )}
     {grade && <Grade {...grade} />}
+    {notes && <Notes notes={notes} view={view} t={t} width={width} height={height} />}
     </>
   );
 };

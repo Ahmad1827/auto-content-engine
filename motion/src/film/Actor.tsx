@@ -607,7 +607,8 @@ export const Actor: React.FC<ActorProps> = ({look = {}, act, path, cues, gesture
   const here = place?.pos ?? new THREE.Vector3();
   const facing = new THREE.Quaternion().setFromAxisAngle(UP, (place?.face ?? 0) * RAD);
   const acted = stage({root: built.root, bones, restWorld: built.restWorld, restPos: built.restPos}, {
-    cues: cues ?? (act ? undefined : [{at: 0, pose: 'stand'}]),
+    // A clip keeps its own legs unless a cue says otherwise.
+    cues: cues ?? (act ? [{at: 0, pose: {plant: false}}] : [{at: 0, pose: 'stand'}]),
     gestures,
     lookAt,
     t,

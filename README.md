@@ -14,7 +14,7 @@ It runs on your own computer. If you have **Claude Code** it uses your Claude su
 | :--- | :--- |
 | **Motion graphics** | Animated 9:16 explainers drawn with code: glowing maps with flags and arrows, line-art illustrations, counters, timelines, quotes and "versus" stat battles, with word-by-word captions. Made for history and religion content. |
 | **Documentary** | A narrated video over web and AI images (Ken Burns), with subtitles and a thumbnail. Vertical or horizontal, short or long. |
-| **Custom Film** | A 3D cartoon written as new code for each video by Claude Code: its own set, cast, camera and acting, in a warm clay-like look. Takes about 35 minutes and needs Claude Code. |
+| **Custom Film** | Any style, written as new code for each video by Claude Code: its own world, cast, camera and animation. It can reuse pieces saved from earlier videos when they fit. Takes about 35 minutes. Without Claude Code, the styles other than Film use fixed scene templates. |
 | **Reddit story** | A top Reddit story read aloud over gameplay footage, with bold subtitles. |
 
 ### Motion graphics styles

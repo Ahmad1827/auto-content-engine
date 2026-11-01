@@ -4,7 +4,7 @@ import os
 import re
 
 from llm.provider import describe_provider
-from motion_gen.film import make_film, render_film
+from motion_gen.film import can_build_films, make_film, render_film
 from motion_gen.narration import DEFAULT_PRESET, voice_language, voice_scenes, words_per_second
 from motion_gen.render import ROOT, render
 from motion_gen.storyboard import make_storyboard
@@ -19,9 +19,11 @@ def _slug(text):
 
 def make_motion_video(topic, style="auto", voice=DEFAULT_PRESET, speed=1.1, captions=True, handle="", seconds=55, film_format="auto", log=print):
     log(f"[Motion] AI: {describe_provider()}")
-    if style == "film":
+    # Claude Code writes every video from scratch, in every style. Only an AI that can't write and check code falls back on the fixed scene templates.
+    if style == "film" or can_build_films():
         return make_film(topic, _slug, voice, speed=speed, captions=captions, handle=handle, seconds=seconds, music_path=MUSIC_PATH,
-                         output_dir=OUTPUT_DIR, film_format=film_format, log=log)
+                         output_dir=OUTPUT_DIR, film_format=film_format, style=style, log=log)
+    log("[Motion] This AI can't write animation code, so this video uses the fixed scene templates. Use Claude Code for videos made from scratch.")
     log(f"[Motion] Writing storyboard for: {topic}")
     language = voice_language(voice)
     board = make_storyboard(topic, style, seconds, words_per_second(voice), language)
