@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="Make an animated TikTok from a topic.")
     parser.add_argument("topic", nargs="?")
     parser.add_argument("--from-storyboard", help="Re-render a saved .storyboard.json instead of writing a new one")
-    parser.add_argument("--style", choices=["auto", "atlas", "ink", "parchment", "neon", "newspaper", "pixel", "diorama", "film"], default="auto")
+    parser.add_argument("--style", choices=["auto", "atlas", "ink", "parchment", "neon", "newspaper", "pixel", "diorama", "physics", "film"], default="auto")
     parser.add_argument("--format", dest="film_format", choices=["auto", *FORMATS], default="auto", help="Kind of story; Claude Code picks one by default")
     parser.add_argument("--language", choices=list(LANGUAGES), help="Language of the video; picks that language's first voice")
     parser.add_argument("--voice",

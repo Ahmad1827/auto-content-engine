@@ -10,4 +10,5 @@ export * from './materials';
 export * from './motion';
 export * from './world';
 export * from './flat';
+export * from './physics';
 export {THEMES} from '../theme';

@@ -18,7 +18,7 @@ LOG_PATH = os.path.join(INBOX, "background.log")
 SETTINGS_PATH = os.path.join(ROOT, ".ace_settings.json")
 
 STORY_KINDS = {"AI picks": "auto", "Everyday and relatable": "relatable", "Escalating comedy": "escalation", "First person": "pov", "Documentary": "documentary",
-               "How it's made": "process", "Cross-section": "cutaway", "Journey on a map": "route"}
+               "How it's made": "process", "Explainer": "explainer", "Cross-section": "cutaway", "Journey on a map": "route"}
 
 
 def voice_label(key):

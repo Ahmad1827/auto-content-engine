@@ -46,7 +46,7 @@ THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 
 MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "cartoon"),
                  ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s"),
-                 ("pixel", "Pixel", "8-bit"), ("diorama", "Diorama", "3D people"), ("film", "Film", "custom 3D")]
+                 ("pixel", "Pixel", "8-bit"), ("diorama", "Diorama", "3D people"), ("physics", "Physics", "explainers"), ("film", "Film", "custom 3D")]
 LOG_LINES = 2000
 STAGES = {"motion": ["Script", "Voice", "Build", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
@@ -700,7 +700,7 @@ class MotionPanel(ctk.CTkFrame):
         width = event.width / ctk.ScalingTracker.get_widget_scaling(self)
         if width > 1:
             # Even rows only: never one or two cards left over on a line of their own.
-            self._lay_out_cards(next((n for n in (9, 5, 3) if width >= n * CARD_WIDTH), 3))
+            self._lay_out_cards(next((n for n in (10, 5) if width >= n * CARD_WIDTH), 5))
 
     def _card(self, parent, key, name, note):
         card = ctk.CTkFrame(parent, fg_color=T.SURFACE, corner_radius=8, border_width=2, border_color=T.RULE, cursor="hand2")

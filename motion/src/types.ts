@@ -1,7 +1,7 @@
 // Storyboard contract shared with the Python pipeline (src/motion_gen/).
 // All times are in seconds from the start of the video.
 
-export type StyleName = 'atlas' | 'ink' | 'parchment' | 'neon' | 'newspaper' | 'pixel' | 'diorama';
+export type StyleName = 'atlas' | 'ink' | 'parchment' | 'neon' | 'newspaper' | 'pixel' | 'diorama' | 'physics';
 
 export type Word = {text: string; start: number; end: number};
 

@@ -21,7 +21,7 @@ It runs on your own computer. If you have **Claude Code** it uses your Claude su
 
 ![Atlas, Ink, Parchment, Neon, Newspaper, Pixel and Diorama](docs/styles.jpg)
 
-**Atlas** (dark glowing maps) · **Ink** (hand-drawn cartoon people) · **Parchment** (old map on paper) · **Neon** (synthwave, for mysteries and tech) · **Newspaper** (1900s front page) · **Pixel** (8-bit pixel-art people) · **Diorama** (low-poly 3D people in little 3D sets). On **Auto**, the AI picks the style that fits the topic.
+**Atlas** (dark glowing maps) · **Ink** (hand-drawn cartoon people) · **Parchment** (old map on paper) · **Neon** (synthwave, for mysteries and tech) · **Newspaper** (1900s front page) · **Pixel** (8-bit pixel-art people) · **Diorama** (low-poly 3D people in little 3D sets) · **Physics** (narrated science explainers: diagrams that move by the real physics, force arrows, graphs that draw themselves and equations that build on the words). On **Auto**, the AI picks the style that fits the topic.
 
 The AI combines these scene types: cast (people acting out the moment in a set: they wave, walk, sit, sleep, pray, point, fight and more, dressed for their time and place), map (country or region zoom, flags, markers, arrows), title card, counter, line-art illustration, with/without comparison, timeline, quote and versus.
 
@@ -166,8 +166,8 @@ On Linux, or anywhere without `ACE.exe`, bind `python quick_idea.py` to a keyboa
 
 | Flag | Meaning |
 | :--- | :--- |
-| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama`, `film` |
-| `--format` | With `--style film`: the kind of story, such as `relatable` (see `make_motion.py --help`) |
+| `--style` | `auto` (default), `atlas`, `ink`, `parchment`, `neon`, `newspaper`, `pixel`, `diorama`, `physics`, `film` |
+| `--format` | With Claude Code: the kind of story, such as `relatable` or `explainer` (see `make_motion.py --help`) |
 | `--seconds` | Target length (default 55) |
 | `--language` | `en` (default), `ar`, `de`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `ro`, `ru`, `tr`, `uk`, `zh` |
 | `--voice` | A Kokoro preset name, `chatterbox`, or an Edge voice from `src/voice_gen/edge_narration.py`; defaults to the language's first voice |

@@ -59,6 +59,20 @@ export const Backdrop: React.FC = () => {
           }} />
         </>
       )}
+      {t.texture === 'graph' && (
+        <>
+          {/* Graph paper that drifts very slowly, so a held frame still breathes. */}
+          <AbsoluteFill
+            style={{
+              backgroundImage: `linear-gradient(${t.border} 2px, transparent 2px), linear-gradient(90deg, ${t.border} 2px, transparent 2px), linear-gradient(${t.border}88 1px, transparent 1px), linear-gradient(90deg, ${t.border}88 1px, transparent 1px)`,
+              backgroundSize: '180px 180px, 180px 180px, 36px 36px, 36px 36px',
+              backgroundPosition: `0 ${-frame * 0.15}px`,
+            }}
+          />
+          <AbsoluteFill style={{background: `radial-gradient(ellipse at 50% 35%, ${t.outline}14 0%, transparent 55%)`}} />
+          <AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.6) 100%)'}} />
+        </>
+      )}
       {t.texture === 'soft' && (
         <>
           <AbsoluteFill style={{background: 'linear-gradient(180deg, #2b2219 0%, #1c1712 55%, #120e0b 100%)'}} />

@@ -15,6 +15,8 @@ STYLES = {
                  "Best for 1850-1980 events: disasters, crimes, heists, scandals, assassinations, famous headlines.",
     "pixel": "8-bit pixel art on a deep violet night: pixel people acting out the story, glowing type. "
              "Best for 'between you and X' facts, internet-culture history, games, science and surprising timelines.",
+    "physics": "a physics explainer on blue-black graph paper: chalk-white diagrams, amber force arrows, cyan motion lines, textbook equations. "
+               "Best for science questions: why things fall, float, fly or break, space, energy, 'what would happen if', and the physics in everyday life.",
     "diorama": "low-poly 3D people in small 3D sets (a house, a bedroom, a desert, a mosque, a battlefield) with soft light and elegant serif titles. "
                "Best for relatable life stories, family, habits, faith in daily life, 'what happens when' and slice-of-life history.",
 }
@@ -84,6 +86,7 @@ LEAN = {
     "neon": "Lean on counters, timelines, versus and illustrations; maps for where it happened.",
     "newspaper": "Lean on timelines, quotes (real headlines or statements), counters and maps; illustrations as front-page sketches.",
     "pixel": "Lean on cast scenes (people acting it out) and compare panels with cast, with counters, timelines and title cards for the big facts. Avoid svg illustrations.",
+    "physics": "Lean on svg illustrations as clean labelled diagrams (arrows for forces, dashed paths), counters for the key numbers with units, and versus or compare panels for 'with vs without'; a quote for the law or equation itself.",
     "diorama": "Lean on cast scenes (most scenes), with counters, quotes and title cards between them. Do not use svg illustrations or svg panels; use cast instead.",
 }
 

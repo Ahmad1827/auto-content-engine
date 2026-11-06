@@ -13,7 +13,9 @@ import {loadFont as loadOrbitron} from '@remotion/google-fonts/Orbitron';
 import {loadFont as loadOswald} from '@remotion/google-fonts/Oswald';
 import {loadFont as loadPlayfair} from '@remotion/google-fonts/PlayfairDisplay';
 import {loadFont as loadShareTech} from '@remotion/google-fonts/ShareTechMono';
+import {loadFont as loadSpaceGrotesk} from '@remotion/google-fonts/SpaceGrotesk';
 import {loadFont as loadSpecialElite} from '@remotion/google-fonts/SpecialElite';
+import {loadFont as loadStix} from '@remotion/google-fonts/STIXTwoText';
 import {createContext, useContext} from 'react';
 import type {StyleName} from './types';
 
@@ -34,8 +36,12 @@ const kalam = loadKalam('normal', {weights: ['700'], ...latin}).fontFamily;
 const newsreader = loadNewsreader('normal', {weights: ['400', '500'], ...latin}).fontFamily;
 const pixelify = loadPixelify('normal', {weights: ['500', '700'], ...latin}).fontFamily;
 const silkscreen = loadSilkscreen('normal', {weights: ['400'], ...latin}).fontFamily;
+const spaceGrotesk = loadSpaceGrotesk('normal', {weights: ['500', '700'], ...latin}).fontFamily;
+// Maths is set like a textbook: italic variables, upright numbers.
+const stix = loadStix('normal', {weights: ['400', '600'], ...latin}).fontFamily;
+loadStix('italic', {weights: ['400', '600'], ...latin});
 
-export type Texture = 'grain' | 'paper' | 'grid' | 'halftone' | 'pixel' | 'soft';
+export type Texture = 'grain' | 'paper' | 'grid' | 'halftone' | 'pixel' | 'soft' | 'graph';
 // Per-style frame dressing drawn over every scene (components/Decor.tsx).
 export type Decor = 'hud' | 'sketch' | 'ornate' | 'synth' | 'press' | 'pixel' | 'clean';
 // How the headline banner looks and lands (components/HeadlineBlock.tsx).
@@ -73,7 +79,8 @@ export type Theme = {
   // Redraw the wobble every few frames so lines "boil" like hand-drawn animation.
   boil: boolean;
   bodyWeight: number;
-  fonts: {display: string; body: string; mono: string};
+  // `math` sets equations and variable names (film/physics.tsx).
+  fonts: {display: string; body: string; mono: string; math?: string};
   // Display fonts differ in width; headlines are sized for Bebas and scaled by this.
   displayScale: number;
   displayWeight: number;
@@ -166,6 +173,16 @@ export const THEMES: Record<StyleName, Theme> = {
     shadow: '0 3px 22px rgba(0,0,0,0.6)', glow: 0.6, lineWidth: 5, wobble: 0, boil: false, bodyWeight: 600,
     fonts: {display: newsreader, body: inter, mono: inter},
     displayScale: 0.62, displayWeight: 400, displayCharEm: 0.56, displayLineHeight: 1.1,
+  },
+  // Physics explainer: chalk-white diagrams on blue-black graph paper, amber for forces, cyan for motion, textbook maths.
+  physics: {
+    ...LATIN_LANGUAGE,
+    bg: '#0d1420', land: '#142033', landFocus: '#1c2d47', border: '#22324c', outline: '#5fd4ff',
+    text: '#eef3fa', muted: '#8a9ab0', accent: '#ffc53d', onAccent: '#0d1420', line: '#eef3fa',
+    panel: 'rgba(255,255,255,0.035)', texture: 'graph', decor: 'clean', banner: 'pill', render: 'flat', align: 'center', setTone: 0.5,
+    shadow: '0 4px 24px rgba(0,0,0,0.6)', glow: 0.7, lineWidth: 5, wobble: 0, boil: false, bodyWeight: 600,
+    fonts: {display: spaceGrotesk, body: inter, mono: jetbrains, math: stix},
+    displayScale: 0.66, displayWeight: 700, displayCharEm: 0.64, displayLineHeight: 1.02,
   },
 };
 

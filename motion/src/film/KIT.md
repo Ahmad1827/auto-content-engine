@@ -191,6 +191,33 @@ For pixel art, ink, paper and diagrams. Draw with ordinary DOM and SVG inside th
 - `<Meter label value x y w color low font />` is a level, 0 to 1, that turns `low` under a quarter: air, money, heat.
 - `<Captions mode="punch|word|line" font color accent upper italic top size />`: `word` is one big word at a time, best when something lands on every word; `line` is a calm sentence, best with long unbroken shots; `punch` highlights the word being said. Match `font` to your style.
 
+## Physics
+
+For films that explain how things move. In `physics` style, the motion must be the real physics, worked out, never eased by eye.
+
+```tsx
+const px = metres([200, 1500], 55);   // 0,0 m at that pixel, 55 px a metre, y up
+const ball = simulate([0, 20, 6, 0], ([, , vx, vy]) => [vx, vy, 0, -9.81], {from: wordAt('drop'), until: 12, stop: ([, y]) => y <= 0});
+const at = (t: number) => px(ball.at(t)[0], ball.at(t)[1]);
+// in the SVG: <Trail path={at} from={wordAt('drop')} />  <circle cx={at(t)[0]} cy={at(t)[1]} r={22} />  <Vector from={at(t)} to={[at(t)[0], at(t)[1] + 120]} label="F_g" />
+```
+
+- `simulate(start, rate, {from, until, dt, after, stop})` steps any state forward exactly (Runge-Kutta): falling, orbits, pendulums, springs, drag, rockets. `rate(s, t)` returns how fast each number changes. `after(s, t)` edits the state after each step, e.g. a bounce: `y < 0 ? [x, -y, vx, -0.8 * vy] : s`. `stop` freezes it and `sim.stopped` is when that happened, for a hit or a landing to land on. Build it once, outside the render or in `useMemo`, and read `sim.at(t)`. Closed forms such as `y = h - g t²/2` are just as good when they exist.
+- `metres(origin, pxPerMetre)` turns metres (y up) into frame pixels; `px.back(x, y)` goes the other way. Keep one scale per setup so sizes compare honestly, and say it with a `Dimension`.
+- SVG, inside `<svg width={1080} height={1920}>`:
+  - `<Vector from to at take color width head label side dash />` is a force or velocity arrow that grows out of its tail and follows its ends as they change, so it shrinks, turns and flips with the motion. It vanishes when it reaches zero. Make its length proportional to the size of the quantity. Amber (`THEMES.physics.accent`) is for forces and cyan (`.outline`) for velocity, and the same colour keeps the same meaning for the whole film.
+  - `<Trail path from to color width fade dash />` is the path drawn behind a moving thing. `path(t)` gives its pixel position. `<Strobe path times r>` leaves a faint copy at each time, so equal time gaps show speed changing; draw your own copy with `children(x, y, i)`.
+  - `<Dimension from to label at offset />` is a measured span: `h = 20 m`.
+  - `<Plot x y w h xs ys series={[{fn, upTo, color, label}]} at xLabel yLabel ticks marks />` is a graph that draws as it happens: pass `upTo` as the time elapsed, so the curve keeps pace with the motion. It has a dot on its newest point. `marks` drops a dashed line at a moment that matters.
+- DOM, on top:
+  - `<Equation terms={['v', '=', {t: 'g', at: wordAt('gravity'), becomes: [wordAt('nine'), '9.8']}, 't']} x y size />` builds term by term on the words that name each part. Each term flashes as it lands, and `becomes` swaps a symbol for its number when the voice plugs it in.
+  - `<Readout label="v" value={speed} unit="m/s" digits x y />` is a live value that may rise and fall.
+  - `<GraphPaper cell x y scale />` is the backdrop. Slide it with `x`, `y` so it moves with a `World2D` camera.
+- 3D: `<Arrow3D from to at color radius />` is the same arrow in a Stage, in metres.
+- Text labels use maths notation: `F_g`, `v_0`, `t^2`, `x_{max}`. Letters are set in italic and numbers upright, as in a textbook.
+
+Teach one setup and change one thing at a time. Freeze or slow the motion (`sim.at(slowTime)`) to show the instant that matters, and say the number as the readout or equation shows it.
+
 ## Maps
 
 `<GeoMap stops={[{at, lon, lat, span}]} look={{sea, land, border, borderWidth, glow, grid}} paint={(t) => ({TUR: '#c33'})}>{(project) => ...}</GeoMap>` is a world map with real countries and one continuous camera. `span` is the degrees of longitude across the frame: 120 for a continent, 8 for a region. `paint` colours whole countries by ISO code and may change with time, so power can visibly shift. Inside, `<Route points={[project(lon, lat), ...]} at take color width dash head>` draws a journey with its marker exactly on the end of the line; pass a function as children to draw your own marker from `(x, y, angle)`: an army, a ship, a sprite. `onLine(points, k)` gives a place and heading along any line. A flag is `<img src={staticFile('flags/tr.svg')} />`.
