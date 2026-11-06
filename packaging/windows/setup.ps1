@@ -1,5 +1,5 @@
 # Run by ACE.exe. Installs ACE and private copies of what it needs into one folder of the user's, with no admin rights. Safe to run again.
-param([Parameter(Mandatory)][string]$Version)
+param([Parameter(Mandatory)][string]$Version, [string]$Exe = '')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
@@ -77,4 +77,32 @@ Check 'Installing the render browser'
 Pop-Location
 
 Remove-Item -Recurse -Force $temp
+
+# A copy of ACE.exe that stays put, and Start menu entries for it. Ctrl+Alt+Shift+A opens the Quick Idea bar from anywhere.
+if ($Exe -and (Test-Path $Exe)) {
+  Say 'Adding ACE to the Start menu'
+  $installed = Join-Path $base 'ACE.exe'
+  try {
+    if ((Resolve-Path $Exe).Path -ne $installed) { Copy-Item -Force $Exe $installed }
+    $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'ACE'
+    New-Item -ItemType Directory -Force $menu | Out-Null
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $shell.CreateShortcut((Join-Path $menu 'ACE.lnk'))
+    $link.TargetPath = $installed
+    $link.WorkingDirectory = $base
+    $link.Description = 'Auto Content Engine'
+    $link.Save()
+    $link = $shell.CreateShortcut((Join-Path $menu 'ACE Quick Idea.lnk'))
+    $link.TargetPath = $installed
+    $link.Arguments = 'idea'
+    $link.WorkingDirectory = $base
+    $link.WindowStyle = 7
+    $link.Hotkey = 'CTRL+ALT+SHIFT+A'
+    $link.Description = 'Type an idea; ACE makes the video in the background'
+    $link.Save()
+  } catch {
+    # ACE works without them; the next update tries again.
+    Write-Host "Couldn't add the Start menu entries: $_" -ForegroundColor DarkYellow
+  }
+}
 Set-Content (Join-Path $base '.version') $Version

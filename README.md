@@ -144,6 +144,22 @@ The app remembers your mode, style, voice, length and handle in `.ace_settings.j
 
 ---
 
+## Quick Idea: make a video without opening the app
+
+Press **Ctrl+Alt+Shift+A** anywhere in Windows. A one-line bar pops up: type an idea and press **Enter** (Esc closes it). The video is made in the background, with no window, using the Motion settings you last chose in the app: style, voice, language, length, captions and handle. When it's done, a notice in the corner of the screen offers **Play**, **Show in folder** and **Copy caption**.
+
+- Send as many ideas as you like. They're made one at a time, in order. If the app is making a video, the background one waits for it, and the other way round.
+- The ideas wait in `output/.inbox`, so ideas that weren't made yet carry on the next time you send one, even after a restart. An idea that fails is moved to `output/.inbox/failed` and the notice says why. Everything is logged in `output/.inbox/background.log`.
+- If the app is open, its reel picks up the new videos by itself.
+
+`ACE.exe` adds the hotkey to the Start menu as **ACE Quick Idea**. You can also open it by typing *Quick Idea* in Start. To change the keys, right-click it, choose **Open file location**, then **Properties → Shortcut key**. If the hotkey does nothing right after installing, sign out and back in once.
+
+On Linux, or anywhere without `ACE.exe`, bind `python quick_idea.py` to a keyboard shortcut in your desktop settings, or queue an idea straight from a terminal:
+
+    python quick_idea.py "The Great Emu War of 1932"
+
+---
+
 ## Command line
 
     python make_motion.py "The Karboğazı ambush of 1920" --style atlas --seconds 60 --voice chatterbox --handle @yourchannel
@@ -184,7 +200,9 @@ To preview and tweak the templates live, run `cd motion && npm run studio`.
 ```
 run.py                  start the app
 make_motion.py          motion graphics from the command line
+quick_idea.py           the Quick Idea bar and the background maker
 src/gui/                the app (CustomTkinter) and its theme
+src/inbox/              Quick Idea: the bar, the inbox, the background maker and its notices
 src/llm/provider.py     Claude Code / Gemini auto-detection
 src/motion_gen/         storyboard, voices (Kokoro + Chatterbox worker), render
 src/script_gen/         documentary scripts

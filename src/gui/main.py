@@ -39,6 +39,7 @@ from motion_gen.film import can_build_films
 from motion_gen.render import stop_running
 from motion_gen.pipeline import OUTPUT_DIR, make_motion_video
 from motion_gen.narration import CHATTERBOX_VOICES, DEFAULT_PRESET, chatterbox_available
+from inbox.jobs import RENDER_LOCK, STORY_KINDS, pending as inbox_pending, voice_label
 
 SETTINGS_PATH = os.path.join(ROOT, ".ace_settings.json")
 THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
@@ -46,8 +47,6 @@ THUMB_DIR = os.path.join(OUTPUT_DIR, ".thumbs")
 MOTION_STYLES = [("auto", "Auto", "AI picks"), ("atlas", "Atlas", "dark maps"), ("ink", "Ink", "cartoon"),
                  ("parchment", "Parchment", "old maps"), ("neon", "Neon", "mystery"), ("newspaper", "Newspaper", "1900s"),
                  ("pixel", "Pixel", "8-bit"), ("diorama", "Diorama", "3D people"), ("film", "Film", "custom 3D")]
-STORY_KINDS = {"AI picks": "auto", "Everyday and relatable": "relatable", "Escalating comedy": "escalation", "First person": "pov", "Documentary": "documentary",
-               "How it's made": "process", "Cross-section": "cutaway", "Journey on a map": "route"}
 LOG_LINES = 2000
 STAGES = {"motion": ["Script", "Voice", "Build", "Render"], "doc": ["Script", "Images", "Voice", "Render"], "reddit": ["Voice", "Render"]}
 
@@ -59,16 +58,9 @@ busy = False
 batch_queue = []
 
 
-def _voice_label(key):
-    """Tk can't draw emoji, so flags become country codes: '🇺🇸 AM - Michael' -> 'US · AM - Michael'."""
-    flag = "".join(chr(ord(c) - 0x1F1E6 + 65) for c in key if 0x1F1E6 <= ord(c) <= 0x1F1FF)
-    text = re.sub(r"[^\u0000-￿]|️", "", key).strip()
-    return f"{flag} · {text}" if flag else text
-
-
-KOKORO_VOICES = {_voice_label(k): k for k in VOICE_PRESETS}
-MOTION_VOICES = {**({_voice_label(k): k for k in CHATTERBOX_VOICES} if chatterbox_available() else {}), **KOKORO_VOICES}
-EDGE_VOICE_LABELS = {_voice_label(k): k for k in EDGE_VOICES}
+KOKORO_VOICES = {voice_label(k): k for k in VOICE_PRESETS}
+MOTION_VOICES = {**({voice_label(k): k for k in CHATTERBOX_VOICES} if chatterbox_available() else {}), **KOKORO_VOICES}
+EDGE_VOICE_LABELS = {voice_label(k): k for k in EDGE_VOICES}
 LANGUAGE_CODES = {lang["name"]: code for code, lang in LANGUAGES.items()}
 
 
@@ -248,6 +240,11 @@ def run_task(task):
 
 def execute(task):
     """Runs one task on the current (worker) thread and reports to the UI. Returns True on success."""
+    if not RENDER_LOCK.acquire():
+        print("[Night Shift] A Quick Idea video is being made in the background. Waiting for it to finish.")
+        ui(set_status, "Waiting for the Quick Idea video being made in the background...", T.MUTED)
+        while not RENDER_LOCK.acquire():
+            time.sleep(10)
     ui(job_started, task)
     try:
         video, caption = run_task(task)
@@ -255,6 +252,8 @@ def execute(task):
         print(f"[Error] {e}", file=sys.stderr)
         ui(job_failed, str(e))
         return False
+    finally:
+        RENDER_LOCK.release()
     ui(job_done, video, caption)
     return True
 
@@ -263,6 +262,10 @@ def run_now(task):
     # One video at a time: two renders at once would bring the machine to a halt.
     if busy:
         set_status("Already working on a video. Add this one to the night shift instead.", T.ACCENT)
+        return
+    # Held from here, so the background maker can't start a video in between.
+    if not RENDER_LOCK.acquire():
+        set_status("A Quick Idea video is being made in the background. Add this one to the night shift instead.", T.ACCENT)
         return
     set_busy(True)
 
@@ -811,7 +814,7 @@ class DocPanel(ctk.CTkFrame):
         self.background.pack(side="left")
 
         section(self, "03", "Voice")
-        self.voice = VoicePicker(self, "doc", KOKORO_VOICES, english_default=_voice_label(DEFAULT_PRESET))
+        self.voice = VoicePicker(self, "doc", KOKORO_VOICES, english_default=voice_label(DEFAULT_PRESET))
         self.voice.pack(anchor="w")
 
         section(self, "04", "Details")
@@ -919,7 +922,7 @@ class RedditPanel(ctk.CTkFrame):
 
         section(self, "03", "Voice")
         voices = list(KOKORO_VOICES)
-        self.voice = option_menu(self, voices, settings.get("reddit_voice", _voice_label(DEFAULT_PRESET)), lambda v: save_settings(reddit_voice=v))
+        self.voice = option_menu(self, voices, settings.get("reddit_voice", voice_label(DEFAULT_PRESET)), lambda v: save_settings(reddit_voice=v))
         self.voice.pack(anchor="w")
 
         actions(self, queue_hint="Night shift takes the top story.")
@@ -1354,6 +1357,21 @@ set_appearance(settings.get("appearance", "dark"))
 switch_mode(settings.get("mode", "motion") if settings.get("mode") in panels else "motion")
 refresh_queue()
 refresh_reel()
+
+
+def watch_output(seen=None, waiting=0):
+    """Videos made in the background by Quick Idea show up in the reel without a restart."""
+    now = {p: os.path.getmtime(p) for p in glob.glob(os.path.join(OUTPUT_DIR, "*.mp4"))}
+    if seen is not None and now != seen and not busy:
+        refresh_reel()
+    left = len(inbox_pending())
+    if left != waiting and not busy:
+        set_status(f"Quick Idea: {left} video{'s' if left > 1 else ''} being made in the background." if left
+                   else "Quick Idea: the background videos are done.", T.MUTED if left else T.GOOD)
+    root.after(15000, watch_output, now, left)
+
+
+root.after(15000, watch_output)
 
 sys.stdout = RedirectText(sys.__stdout__)
 sys.stderr = RedirectText(sys.__stderr__, tag="error")

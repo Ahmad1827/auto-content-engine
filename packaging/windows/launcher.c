@@ -1,4 +1,5 @@
 // ACE.exe: installs ACE into %LOCALAPPDATA%\ACE the first time and after an update, then opens the app.
+// "ACE.exe idea" opens the Quick Idea bar instead, which makes a video in the background.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +40,10 @@ static int installed(void) {
 }
 
 static int install(void) {
-    char script[MAX_PATH + 32], line[MAX_PATH * 2];
+    char script[MAX_PATH + 32], line[MAX_PATH * 3], exe[MAX_PATH];
+    // The Quick Idea shortcut starts this window minimised; an install should be seen.
+    ShowWindow(GetConsoleWindow(), SW_RESTORE);
+    GetModuleFileNameA(NULL, exe, MAX_PATH);
     GetTempPathA(MAX_PATH, script);
     strcat(script, "ace-setup.ps1");
     FILE *f = fopen(script, "wb");
@@ -47,13 +51,14 @@ static int install(void) {
     fwrite(SETUP_PS1, 1, SETUP_PS1_LEN, f);
     fclose(f);
     printf("\nInstalling ACE. This needs internet, takes about 10 minutes and uses about 3 GB. It only happens once.\n");
-    snprintf(line, sizeof(line), "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%s\" -Version %s", script, ACE_VERSION);
+    snprintf(line, sizeof(line), "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%s\" -Version %s -Exe \"%s\"", script, ACE_VERSION, exe);
     int code = run(line, NULL);
     DeleteFileA(script);
     return code;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    int idea = argc > 1 && strcmp(argv[1], "idea") == 0;
     SetConsoleTitleA("ACE - Auto Content Engine");
     printf("ACE %s\n", ACE_VERSION);
     const char *local = getenv("LOCALAPPDATA");
@@ -87,8 +92,10 @@ int main(void) {
     CreateDirectoryA(temp, NULL);
     SetEnvironmentVariableA("TEMP", temp);
     SetEnvironmentVariableA("TMP", temp);
+    // The hotkey gives this program the right to come to the front; pass it on, so the bar opens with the keyboard on it.
+    if (idea) AllowSetForegroundWindow(ASFW_ANY);
     snprintf(dir, sizeof(dir), "%s\\app", base);
-    snprintf(line, sizeof(line), "\"%s\\python\\python.exe\" run.py", base);
+    snprintf(line, sizeof(line), "\"%s\\python\\python.exe\" %s", base, idea ? "quick_idea.py" : "run.py");
     int code = run(line, dir);
     if (code != 0) {
         printf("\nACE stopped with error %d. The messages above say why.\n", code);
